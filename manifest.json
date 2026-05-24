@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "质量可视化评估工具",
+  "description": "固定在右侧的 Kimi 对话分析侧边栏，支持本地历史记录与问答可视化。",
+  "version": "1.0.0",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs",
+    "sidePanel",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://kimi.moonshot.cn/*",
+    "https://www.kimi.com/*",
+    "https://kimi.ai/*",
+    "https://kimi.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "打开质量可视化评估工具"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://kimi.moonshot.cn/*",
+        "https://www.kimi.com/*",
+        "https://kimi.ai/*",
+        "https://kimi.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sidepanel.html",
+        "sidepanel.css",
+        "sidepanel.js",
+        "auth.css",
+        "auth.js"
+      ],
+      "matches": [
+        "https://kimi.moonshot.cn/*",
+        "https://www.kimi.com/*",
+        "https://kimi.ai/*",
+        "https://kimi.com/*"
+      ]
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}
