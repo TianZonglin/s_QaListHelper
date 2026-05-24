@@ -1,8 +1,18 @@
 (() => {
-  if (window.__chatflowContentLoaded) return;
+  try {
+    window.__chatflowCleanup?.();
+  } catch {
+    // Ignore stale cleanup hooks left by an invalidated extension context.
+  }
+
   window.__chatflowContentLoaded = true;
 
-  const SUPPORTED_HOSTS = ["kimi.moonshot.cn", "www.kimi.com", "kimi.com", "kimi.ai"];
+  const SUPPORTED_HOSTS = [
+    "kimi.moonshot.cn",
+    "www.kimi.com",
+    "kimi.com",
+    "kimi.ai",
+  ];
   const ROOT_ID = "chatflow-floating-root";
   const RETRY_DELAYS = [0, 160, 420, 900, 1600];
 
@@ -10,14 +20,14 @@
     "textarea",
     "[contenteditable='true']",
     "[role='textbox']",
-    ".chat-input textarea"
+    ".chat-input textarea",
   ];
 
   const SEND_BUTTON_SELECTORS = [
     "button[type='submit']",
     "button[aria-label*='发送']",
     "button[aria-label*='Send']",
-    "button.send-button"
+    "button.send-button",
   ];
 
   const USER_SELECTORS = [
@@ -30,7 +40,7 @@
     "[class*='message-user' i]",
     "[class*='human-message' i]",
     "[class*='query' i]",
-    "[class*='question' i]"
+    "[class*='question' i]",
   ];
 
   const ASSISTANT_SELECTORS = [
@@ -43,7 +53,7 @@
     "[class*='message-assistant' i]",
     "[class*='bot-message' i]",
     "[class*='answer' i]",
-    "[class*='response' i]"
+    "[class*='response' i]",
   ];
 
   const MESSAGE_SELECTORS = [
@@ -57,7 +67,7 @@
     "main [class*='message' i]",
     "main [class*='chat-item' i]",
     "main [class*='conversation-item' i]",
-    "main [class*='turn' i]"
+    "main [class*='turn' i]",
   ];
 
   const CONTENT_SELECTORS = [
@@ -68,13 +78,59 @@
     ".prose",
     ".message-content",
     ".chat-message-content",
-    ".response-content"
+    ".response-content",
   ];
 
   let observer = null;
   let timer = null;
   let lastDigest = "";
   let forceNextCapture = false;
+  let handleRuntimeMessage = null;
+
+  function isExtensionContextInvalidated(error) {
+    return String(error?.message || error || "").includes(
+      "Extension context invalidated",
+    );
+  }
+
+  function runtimeAvailable() {
+    try {
+      return Boolean(window.chrome?.runtime?.id && chrome.runtime?.sendMessage);
+    } catch {
+      return false;
+    }
+  }
+
+  function safeSendMessage(message) {
+    if (!runtimeAvailable()) return false;
+    try {
+      chrome.runtime.sendMessage(message, () => {
+        try {
+          void chrome.runtime.lastError;
+        } catch {
+          // The context can be invalidated between send and callback.
+        }
+      });
+      return true;
+    } catch (error) {
+      if (!isExtensionContextInvalidated(error)) {
+        console.warn("chatflow content sendMessage failed", error);
+      }
+      return false;
+    }
+  }
+
+  function safeGetExtensionUrl(path) {
+    if (!runtimeAvailable()) return "";
+    try {
+      return chrome.runtime.getURL(path);
+    } catch (error) {
+      if (!isExtensionContextInvalidated(error)) {
+        console.warn("chatflow content getURL failed", error);
+      }
+      return "";
+    }
+  }
 
   function isSupportedPage() {
     return SUPPORTED_HOSTS.includes(window.location.hostname);
@@ -125,7 +181,7 @@
         current.getAttribute?.("data-testid"),
         current.getAttribute?.("aria-label"),
         current.id,
-        typeof current.className === "string" ? current.className : ""
+        typeof current.className === "string" ? current.className : "",
       );
       current = current.parentElement;
       depth += 1;
@@ -136,18 +192,22 @@
   function classify(element) {
     const sig = signature(element);
     if (
-      /\b(user|human|me|self|query|prompt|question|ask)\b|用户|提问|问题|我的/.test(sig)
+      /\b(user|human|me|self|query|prompt|question|ask)\b|用户|提问|问题|我的/.test(
+        sig,
+      )
     ) {
       return "question";
     }
     if (
-      /\b(assistant|kimi|moonshot|ai|bot|model|reply|response|answer)\b|助手|回答|回复|答复/.test(sig)
+      /\b(assistant|kimi|moonshot|ai|bot|model|reply|response|answer)\b|助手|回答|回复|答复/.test(
+        sig,
+      )
     ) {
       return "answer";
     }
     if (
       element.querySelector(
-        "button[aria-label*='复制'], button[aria-label*='重新生成'], button[aria-label*='点赞'], button[aria-label*='点踩']"
+        "button[aria-label*='复制'], button[aria-label*='重新生成'], button[aria-label*='点赞'], button[aria-label*='点踩']",
       )
     ) {
       return "answer";
@@ -173,7 +233,10 @@
     for (const selector of MESSAGE_SELECTORS) {
       document.querySelectorAll(selector).forEach((element) => {
         if (!isVisible(element)) return;
-        if (element.matches("textarea, input, form") || element.querySelector("textarea, input")) {
+        if (
+          element.matches("textarea, input, form") ||
+          element.querySelector("textarea, input")
+        ) {
           return;
         }
         const type = classify(element);
@@ -188,7 +251,9 @@
 
   function documentOrder(a, b) {
     if (a === b) return 0;
-    return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
+      ? -1
+      : 1;
   }
 
   function dedupeCandidates(candidates) {
@@ -198,7 +263,10 @@
       const duplicate = kept.some((existing) => {
         if (existing.type !== item.type) return false;
         if (existing.element === item.element) return true;
-        if (existing.element.contains(item.element) || item.element.contains(existing.element)) {
+        if (
+          existing.element.contains(item.element) ||
+          item.element.contains(existing.element)
+        ) {
           return true;
         }
         return normalizeText(existing.text) === normalizeText(item.text);
@@ -214,7 +282,9 @@
       element.querySelector("[datetime]") ||
       element.closest("article")?.querySelector("time");
     return time
-      ? time.getAttribute("datetime") || time.getAttribute("title") || normalizeText(time.textContent)
+      ? time.getAttribute("datetime") ||
+          time.getAttribute("title") ||
+          normalizeText(time.textContent)
       : null;
   }
 
@@ -222,7 +292,7 @@
     const candidates = dedupeCandidates([
       ...collectBySelectors("question", USER_SELECTORS, 3),
       ...collectBySelectors("answer", ASSISTANT_SELECTORS, 3),
-      ...collectGeneric()
+      ...collectGeneric(),
     ]);
     const counters = { question: 0, answer: 0 };
     return candidates.map((item) => {
@@ -234,21 +304,25 @@
       const order = counters[item.type];
       counters[item.type] += 1;
       return {
-        key: explicitId ? `${item.type}:${explicitId}` : `${item.type}:${order}`,
+        key: explicitId
+          ? `${item.type}:${explicitId}`
+          : `${item.type}:${order}`,
         order,
         type: item.type,
         content: item.text,
-        timestamp: timestampOf(item.element)
+        timestamp: timestampOf(item.element),
       };
     });
   }
 
   function digest(messages) {
-    return messages.map((message) => `${message.key}:${message.content}`).join("||");
+    return messages
+      .map((message) => `${message.key}:${message.content}`)
+      .join("||");
   }
 
   function publish(force = false) {
-    if (!isSupportedPage() || !window.chrome?.runtime?.sendMessage) {
+    if (!isSupportedPage() || !runtimeAvailable()) {
       return { ok: false, messages: [] };
     }
     const messages = extractMessages();
@@ -257,15 +331,15 @@
       return { ok: true, messages, skipped: true };
     }
     lastDigest = nextDigest;
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "SYNC_PAGE_MESSAGES",
       payload: {
         url: window.location.href,
         pageTitle: document.title,
         digest: nextDigest,
         capturedAt: Date.now(),
-        messages
-      }
+        messages,
+      },
     });
     return { ok: true, messages };
   }
@@ -289,16 +363,20 @@
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      characterData: true
+      characterData: true,
     });
-    window.addEventListener("load", () => scheduleCapture(0, true), { once: true });
+    window.addEventListener("load", () => scheduleCapture(0, true), {
+      once: true,
+    });
     window.addEventListener("focus", () => scheduleCapture(0, true));
     window.addEventListener("popstate", () => scheduleCapture(0, true));
     window.addEventListener("hashchange", () => scheduleCapture(0, true));
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") scheduleCapture(0, true);
     });
-    RETRY_DELAYS.forEach((delay) => window.setTimeout(() => scheduleCapture(0, true), delay));
+    RETRY_DELAYS.forEach((delay) =>
+      window.setTimeout(() => scheduleCapture(0, true), delay),
+    );
   }
 
   function firstAvailable(selectors) {
@@ -312,7 +390,10 @@
 
   function setInputValue(element, value) {
     if (!element) return false;
-    if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+    if (
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLInputElement
+    ) {
       element.focus();
       element.value = value;
       element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -323,14 +404,23 @@
       element.focus();
       element.textContent = value;
       element.dispatchEvent(
-        new InputEvent("input", { bubbles: true, data: value, inputType: "insertText" })
+        new InputEvent("input", {
+          bubbles: true,
+          data: value,
+          inputType: "insertText",
+        }),
       );
       return true;
     }
     return false;
   }
 
-  async function submitPrompt({ prompt, questionId, anchorQuestionId, relationType }) {
+  async function submitPrompt({
+    prompt,
+    questionId,
+    anchorQuestionId,
+    relationType,
+  }) {
     if (!isSupportedPage()) {
       return { ok: false, error: "当前页面不是受支持的 Kimi 页面。" };
     }
@@ -344,14 +434,14 @@
     }
     sendButton.click();
     scheduleCapture(180, true);
-    chrome.runtime?.sendMessage?.({
+    safeSendMessage({
       type: "ANSWER_STREAM",
       payload: {
         questionId,
         anchorQuestionId,
         relationType,
-        content: "正在等待页面自动抓取回答内容..."
-      }
+        content: "正在等待页面自动抓取回答内容...",
+      },
     });
     return { ok: true };
   }
@@ -359,6 +449,10 @@
   function ensureFloatingPanel() {
     let root = document.getElementById(ROOT_ID);
     if (root) return root;
+    const sidepanelUrl = safeGetExtensionUrl("sidepanel.html");
+    if (!sidepanelUrl) {
+      throw new Error("扩展上下文已失效，请刷新 Kimi 页面后重试。");
+    }
     root = document.createElement("div");
     root.id = ROOT_ID;
     root.dataset.visible = "false";
@@ -393,7 +487,7 @@
       <iframe
         class="chatflow-frame"
         title="问答侧边栏面板"
-        src="${chrome.runtime.getURL("sidepanel.html")}"
+        src="${sidepanelUrl}"
         allow="clipboard-write"
       ></iframe>
     `;
@@ -403,7 +497,10 @@
 
   function toggleFloatingPanel() {
     if (!isSupportedPage()) {
-      return { ok: false, error: "请先打开受支持的 Kimi 页面，再使用扩展侧边栏。" };
+      return {
+        ok: false,
+        error: "请先打开受支持的 Kimi 页面，再使用扩展侧边栏。",
+      };
     }
     startObserver();
     scheduleCapture(0, true);
@@ -413,9 +510,16 @@
     return { ok: true, visible };
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  handleRuntimeMessage = (message, _sender, sendResponse) => {
     if (message?.type === "TOGGLE_FLOATING_PANEL") {
-      sendResponse(toggleFloatingPanel());
+      try {
+        sendResponse(toggleFloatingPanel());
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          error: error?.message || "切换侧边栏失败。",
+        });
+      }
       return false;
     }
     if (message?.type === "CAPTURE_PAGE_MESSAGES") {
@@ -424,7 +528,7 @@
       sendResponse({
         ok: result.ok,
         count: result.messages.length,
-        url: window.location.href
+        url: window.location.href,
       });
       return false;
     }
@@ -434,13 +538,37 @@
         .catch((error) =>
           sendResponse({
             ok: false,
-            error: error?.message || "内容脚本在发送提问时发生错误。"
-          })
+            error: error?.message || "内容脚本在发送提问时发生错误。",
+          }),
         );
       return true;
     }
     return false;
-  });
+  };
+
+  try {
+    if (runtimeAvailable()) {
+      chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+    }
+  } catch (error) {
+    if (!isExtensionContextInvalidated(error)) {
+      console.warn("chatflow content listener registration failed", error);
+    }
+  }
+
+  window.__chatflowCleanup = () => {
+    if (timer) window.clearTimeout(timer);
+    timer = null;
+    if (observer) observer.disconnect();
+    observer = null;
+    try {
+      if (handleRuntimeMessage && window.chrome?.runtime?.onMessage) {
+        chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
+      }
+    } catch {
+      // Old listeners may already belong to an invalidated context.
+    }
+  };
 
   startObserver();
 })();

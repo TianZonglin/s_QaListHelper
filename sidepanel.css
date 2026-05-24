@@ -66,7 +66,11 @@ input {
   gap: 10px;
   padding: 12px;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--header-start) 0%, var(--header-end) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--header-start) 0%,
+    var(--header-end) 100%
+  );
   color: #ffffff;
   box-shadow: var(--shadow);
   border: none;
@@ -154,7 +158,11 @@ input {
   border: 1px solid rgba(255, 255, 255, 0.62);
   border-radius: 999px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(227, 238, 255, 0.92)),
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.86),
+      rgba(227, 238, 255, 0.92)
+    ),
     linear-gradient(135deg, rgba(22, 93, 255, 0.18), rgba(64, 158, 255, 0.1));
   color: #165dff;
   box-shadow: 0 18px 36px rgba(22, 93, 255, 0.16);
@@ -178,7 +186,11 @@ input {
 
 .capture-actions .ghost-button {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(227, 238, 255, 0.92)),
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.86),
+      rgba(227, 238, 255, 0.92)
+    ),
     linear-gradient(135deg, rgba(22, 93, 255, 0.18), rgba(64, 158, 255, 0.1));
   box-shadow: 0 18px 36px rgba(22, 93, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.62);

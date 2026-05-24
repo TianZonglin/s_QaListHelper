@@ -4,7 +4,7 @@
     users: "chatflow.user-auth.users.v1",
     userIndex: "chatflow.user-auth.user-index.v1",
     session: "chatflow.user-auth.session.v1",
-    activeBucket: "chatflow.user-auth.active-bucket.v1"
+    activeBucket: "chatflow.user-auth.active-bucket.v1",
   };
   const HISTORY_BUCKET_PREFIX = "chatflow.user-auth.history.v1.";
   const USER_RECORD_PREFIX = "chatflow.user-auth.user-record.v1.";
@@ -40,7 +40,7 @@
     logoutSuccess: "已退出当前账号，并恢复未登录历史。",
     loginSuccessNow: "登录成功，已切换到账号历史。",
     localOnly: "本地加密保存",
-    historyBound: "质量评估历史已与当前账号绑定。"
+    historyBound: "质量评估历史已与当前账号绑定。",
   };
 
   const state = {
@@ -51,12 +51,28 @@
     session: null,
     users: [],
     syncTimer: null,
-    syncing: false
+    syncing: false,
   };
 
   const refs = {};
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+
+  function isExtensionContextInvalidated(error) {
+    return String(error?.message || error || "").includes(
+      "Extension context invalidated",
+    );
+  }
+
+  function chromeStorageAvailable() {
+    try {
+      return Boolean(
+        window.chrome?.runtime?.id && window.chrome?.storage?.local,
+      );
+    } catch {
+      return false;
+    }
+  }
 
   function init() {
     if (!document.body) {
@@ -76,10 +92,13 @@
 
     try {
       state.users = await loadUsers();
-      state.session = normalizeSession(await readEncryptedValue(STORAGE_KEYS.session, null));
+      state.session = normalizeSession(
+        await readEncryptedValue(STORAGE_KEYS.session, null),
+      );
 
       const desiredBucket = getBucketIdForSession(state.session);
-      const mountedBucket = localStorage.getItem(STORAGE_KEYS.activeBucket) || DEFAULT_BUCKET;
+      const mountedBucket =
+        localStorage.getItem(STORAGE_KEYS.activeBucket) || DEFAULT_BUCKET;
 
       localStorage.setItem(STORAGE_KEYS.activeBucket, desiredBucket);
       startStorageSync();
@@ -130,7 +149,7 @@
       `<button type="button" class="chatflow-auth-close" aria-label="${COPY.close}">x</button>`,
       "</div>",
       '<div class="chatflow-auth-content"></div>',
-      "</section>"
+      "</section>",
     ].join("");
 
     document.body.appendChild(root);
@@ -145,7 +164,9 @@
   }
 
   function mountInlineLauncher() {
-    const inlineActions = document.querySelector(".capture-panel .capture-actions");
+    const inlineActions = document.querySelector(
+      ".capture-panel .capture-actions",
+    );
     if (!inlineActions || !refs.root) {
       return;
     }
@@ -184,7 +205,10 @@
   }
 
   function handleRuntimeMessage(message) {
-    if (message?.type === "SESSION_UPDATED" || message?.type === "SESSION_INDEX_UPDATED") {
+    if (
+      message?.type === "SESSION_UPDATED" ||
+      message?.type === "SESSION_INDEX_UPDATED"
+    ) {
       scheduleStorageSync();
     }
   }
@@ -217,7 +241,8 @@
     state.syncing = true;
     try {
       const bucketId =
-        localStorage.getItem(STORAGE_KEYS.activeBucket) || getBucketIdForSession(state.session);
+        localStorage.getItem(STORAGE_KEYS.activeBucket) ||
+        getBucketIdForSession(state.session);
       await persistHistoryBucket(bucketId);
     } finally {
       state.syncing = false;
@@ -226,7 +251,9 @@
 
   function render() {
     refs.launcher.setAttribute("aria-expanded", String(state.open));
-    refs.launcherLabel.textContent = state.session ? state.session.username : COPY.launcher;
+    refs.launcherLabel.textContent = state.session
+      ? state.session.username
+      : COPY.launcher;
     refs.backdrop.classList.toggle("chatflow-auth-hidden", !state.open);
     refs.panel.classList.toggle("chatflow-auth-hidden", !state.open);
 
@@ -258,7 +285,7 @@
       `<button type="submit" class="chatflow-auth-submit">${state.mode === "login" ? COPY.loginSubmit : COPY.registerSubmit}</button>`,
       `<button type="button" class="chatflow-auth-ghost" data-switch-mode="${state.mode === "login" ? "register" : "login"}">${state.mode === "login" ? COPY.register : COPY.login}</button>`,
       "</div>",
-      "</form>"
+      "</form>",
     ].join("");
 
     refs.content.querySelectorAll("[data-mode]").forEach((button) => {
@@ -309,10 +336,12 @@
       `<button type="button" class="chatflow-auth-submit">${COPY.close}</button>`,
       `<button type="button" class="chatflow-auth-ghost">${COPY.logout}</button>`,
       "</div>",
-      "</div>"
+      "</div>",
     ].join("");
 
-    const buttons = refs.content.querySelectorAll(".chatflow-auth-actions button");
+    const buttons = refs.content.querySelectorAll(
+      ".chatflow-auth-actions button",
+    );
     if (buttons[0]) {
       buttons[0].addEventListener("click", closePanel);
     }
@@ -344,7 +373,7 @@
       normalized: username.toLowerCase(),
       salt,
       passwordHash,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
 
     state.users = [...state.users, user];
@@ -352,7 +381,7 @@
 
     state.session = {
       username,
-      loginAt: new Date().toISOString()
+      loginAt: new Date().toISOString(),
     };
     await writeEncryptedValue(STORAGE_KEYS.session, state.session);
     await switchHistoryBucket(getBucketIdForSession(state.session));
@@ -385,7 +414,7 @@
 
     state.session = {
       username: user.username,
-      loginAt: new Date().toISOString()
+      loginAt: new Date().toISOString(),
     };
     await writeEncryptedValue(STORAGE_KEYS.session, state.session);
     await switchHistoryBucket(getBucketIdForSession(state.session));
@@ -407,7 +436,8 @@
   }
 
   async function switchHistoryBucket(targetBucket) {
-    const currentBucket = localStorage.getItem(STORAGE_KEYS.activeBucket) || DEFAULT_BUCKET;
+    const currentBucket =
+      localStorage.getItem(STORAGE_KEYS.activeBucket) || DEFAULT_BUCKET;
 
     if (currentBucket !== targetBucket) {
       await persistHistoryBucket(currentBucket);
@@ -425,43 +455,64 @@
       const snapshot = await capturePluginStorage();
       await writeEncryptedValue(getHistoryStorageKey(bucketId), snapshot);
     } catch (error) {
+      if (isExtensionContextInvalidated(error)) {
+        return;
+      }
       console.error("chatflow auth persist history failed", error);
     }
   }
 
   async function restoreHistoryBucket(bucketId) {
     try {
-      const snapshot = await readEncryptedValue(getHistoryStorageKey(bucketId), null);
+      const snapshot = await readEncryptedValue(
+        getHistoryStorageKey(bucketId),
+        null,
+      );
       await replacePluginStorage(snapshot);
     } catch (error) {
+      if (isExtensionContextInvalidated(error)) {
+        return;
+      }
       console.error("chatflow auth restore history failed", error);
     }
   }
 
   async function capturePluginStorage() {
+    if (!chromeStorageAvailable()) {
+      return {
+        currentSessionId: null,
+        sessionIndex: [],
+        sessions: [],
+      };
+    }
     const meta = await chromeStorageGet([CURRENT_SESSION_KEY, META_KEY]);
     const sessions = await readAllSessions();
 
     return {
       currentSessionId: meta[CURRENT_SESSION_KEY] || null,
       sessionIndex: Array.isArray(meta[META_KEY]) ? meta[META_KEY] : [],
-      sessions
+      sessions,
     };
   }
 
   async function replacePluginStorage(snapshot) {
-    const sessionIndex = Array.isArray(snapshot?.sessionIndex) ? snapshot.sessionIndex : [];
+    if (!chromeStorageAvailable()) {
+      return;
+    }
+    const sessionIndex = Array.isArray(snapshot?.sessionIndex)
+      ? snapshot.sessionIndex
+      : [];
     const sessions = Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
     const currentSessionId = snapshot?.currentSessionId || null;
 
     await writeAllSessions(sessions);
     await chromeStorageSet({
-      [META_KEY]: sessionIndex
+      [META_KEY]: sessionIndex,
     });
 
     if (currentSessionId) {
       await chromeStorageSet({
-        [CURRENT_SESSION_KEY]: currentSessionId
+        [CURRENT_SESSION_KEY]: currentSessionId,
       });
       return;
     }
@@ -472,7 +523,8 @@
   async function readAllSessions() {
     return withStore("readonly", (store, resolve, reject) => {
       const request = store.getAll();
-      request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+      request.onsuccess = () =>
+        resolve(Array.isArray(request.result) ? request.result : []);
       request.onerror = () => reject(request.error);
     });
   }
@@ -511,7 +563,7 @@
           handler(store, resolve, reject);
           transaction.onerror = () => reject(transaction.error);
           transaction.oncomplete = () => database.close();
-        })
+        }),
     );
   }
 
@@ -547,7 +599,7 @@
 
     return {
       username: user.username,
-      loginAt: session.loginAt || new Date().toISOString()
+      loginAt: session.loginAt || new Date().toISOString(),
     };
   }
 
@@ -564,7 +616,9 @@
   }
 
   function findUser(username) {
-    const normalized = String(username || "").trim().toLowerCase();
+    const normalized = String(username || "")
+      .trim()
+      .toLowerCase();
     return state.users.find((item) => item.normalized === normalized) || null;
   }
 
@@ -574,7 +628,7 @@
       const records = await Promise.all(
         usernames.map(async (username) => {
           return readEncryptedValue(getUserStorageKey(username), null);
-        })
+        }),
       );
 
       return records.filter(Boolean);
@@ -596,7 +650,8 @@
           return (
             user &&
             typeof user.username === "string" &&
-            list.findIndex((item) => item?.normalized === user.normalized) === index
+            list.findIndex((item) => item?.normalized === user.normalized) ===
+              index
           );
         })
       : [];
@@ -607,7 +662,7 @@
     await Promise.all(
       dedupedUsers.map((user) => {
         return writeEncryptedValue(getUserStorageKey(user.username), user);
-      })
+      }),
     );
   }
 
@@ -624,7 +679,9 @@
   }
 
   function getUserStorageKey(username) {
-    return `${USER_RECORD_PREFIX}${String(username || "").trim().toLowerCase()}`;
+    return `${USER_RECORD_PREFIX}${String(username || "")
+      .trim()
+      .toLowerCase()}`;
   }
 
   function setStatus(message, error) {
@@ -642,7 +699,7 @@
         month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
-        minute: "2-digit"
+        minute: "2-digit",
       })}`;
     } catch (error) {
       return "";
@@ -685,36 +742,79 @@
 
   async function chromeStorageGet(keys) {
     return new Promise((resolve) => {
-      if (!window.chrome?.storage?.local) {
+      if (!chromeStorageAvailable()) {
         resolve({});
         return;
       }
 
-      window.chrome.storage.local.get(keys, (result) => {
-        resolve(result || {});
-      });
+      try {
+        window.chrome.storage.local.get(keys, (result) => {
+          try {
+            void window.chrome.runtime.lastError;
+          } catch {
+            resolve({});
+            return;
+          }
+          resolve(result || {});
+        });
+      } catch (error) {
+        if (!isExtensionContextInvalidated(error)) {
+          console.warn("chatflow auth storage get failed", error);
+        }
+        resolve({});
+      }
     });
   }
 
   async function chromeStorageSet(payload) {
     return new Promise((resolve) => {
-      if (!window.chrome?.storage?.local) {
+      if (!chromeStorageAvailable()) {
         resolve();
         return;
       }
 
-      window.chrome.storage.local.set(payload, () => resolve());
+      try {
+        window.chrome.storage.local.set(payload, () => {
+          try {
+            void window.chrome.runtime.lastError;
+          } catch {
+            resolve();
+            return;
+          }
+          resolve();
+        });
+      } catch (error) {
+        if (!isExtensionContextInvalidated(error)) {
+          console.warn("chatflow auth storage set failed", error);
+        }
+        resolve();
+      }
     });
   }
 
   async function chromeStorageRemove(keys) {
     return new Promise((resolve) => {
-      if (!window.chrome?.storage?.local) {
+      if (!chromeStorageAvailable()) {
         resolve();
         return;
       }
 
-      window.chrome.storage.local.remove(keys, () => resolve());
+      try {
+        window.chrome.storage.local.remove(keys, () => {
+          try {
+            void window.chrome.runtime.lastError;
+          } catch {
+            resolve();
+            return;
+          }
+          resolve();
+        });
+      } catch (error) {
+        if (!isExtensionContextInvalidated(error)) {
+          console.warn("chatflow auth storage remove failed", error);
+        }
+        resolve();
+      }
     });
   }
 
@@ -722,10 +822,14 @@
     const key = await getAesKey(ensureDeviceSecret());
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encoded = encoder.encode(JSON.stringify(value));
-    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+    const encrypted = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      encoded,
+    );
     return JSON.stringify({
       iv: toBase64(iv),
-      data: toBase64(new Uint8Array(encrypted))
+      data: toBase64(new Uint8Array(encrypted)),
     });
   }
 
@@ -735,16 +839,19 @@
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: fromBase64(parsed.iv) },
       key,
-      fromBase64(parsed.data)
+      fromBase64(parsed.data),
     );
     return JSON.parse(decoder.decode(decrypted));
   }
 
   async function getAesKey(secret) {
-    const digest = await crypto.subtle.digest("SHA-256", encoder.encode(secret));
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      encoder.encode(secret),
+    );
     return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, [
       "encrypt",
-      "decrypt"
+      "decrypt",
     ]);
   }
 
@@ -754,17 +861,17 @@
       encoder.encode(password),
       "PBKDF2",
       false,
-      ["deriveBits"]
+      ["deriveBits"],
     );
     const bits = await crypto.subtle.deriveBits(
       {
         name: "PBKDF2",
         salt: fromBase64(saltBase64),
         iterations: 120000,
-        hash: "SHA-256"
+        hash: "SHA-256",
       },
       keyMaterial,
-      256
+      256,
     );
     return toBase64(new Uint8Array(bits));
   }
