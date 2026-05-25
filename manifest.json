@@ -8,7 +8,8 @@
     "https://kimi.moonshot.cn/*",
     "https://www.kimi.com/*",
     "https://kimi.ai/*",
-    "https://kimi.com/*"
+    "https://kimi.com/*",
+    "https://relay.nf.video/*"
   ],
   "background": {
     "service_worker": "background.js"
