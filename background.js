@@ -278,64 +278,44 @@
         });
       }));
   }
+  function bt(e) {
+    let r = Date.parse(e?.createdAt || "");
+    return Number.isFinite(r) ? r : Number.MAX_SAFE_INTEGER;
+  }
   function yt(e) {
     (dt(e), pt(e));
-    let r = e.nodes
-        .filter((s) => s.visible !== !1)
-        .sort((s, i) => {
-          let a = new Date(s.createdAt) - new Date(i.createdAt);
-          return a !== 0
-            ? a
-            : s.type === i.type
-              ? String(s.id).localeCompare(String(i.id))
-              : s.type === "question"
-                ? -1
-                : 1;
-        }),
-      n = new Map();
-    r.forEach((s) => {
-      let i = s.conversationId || s.anchorQuestionId || s.questionId || s.id,
-        a = n.get(i) || [];
-      (a.push(s), n.set(i, a));
-    });
-    let t = new Map(),
-      o = w;
+    let r = e.nodes.filter((a) => a.visible !== !1),
+      n = new Map(r.map((a, c) => [a.id, c])),
+      t = (a, c) => {
+        let d = bt(a) - bt(c);
+        if (d !== 0) return d;
+        let l = (n.get(a.id) ?? 0) - (n.get(c.id) ?? 0);
+        return l !== 0 ? l : String(a.id).localeCompare(String(c.id));
+      },
+      o = r.filter((a) => a.type === "question").sort(t),
+      s = r.filter((a) => a.type === "answer").sort(t),
+      i = new Map(),
+      a = w + 136,
+      c = 44;
     return (
-      Array.from(n.entries())
-        .sort((s, i) => {
-          let a = new Date(s[1][0]?.createdAt || 0),
-            c = new Date(i[1][0]?.createdAt || 0);
-          return a - c;
-        })
-        .forEach(([, s]) => {
-          (s
-            .sort((i, a) => {
-              let c = new Date(i.createdAt) - new Date(a.createdAt);
-              return c !== 0
-                ? c
-                : i.type === a.type
-                  ? String(i.id).localeCompare(String(a.id))
-                  : i.type === "question"
-                    ? -1
-                    : 1;
-            })
-            .forEach((i) => {
-              ((i.position = { x: i.type === "answer" ? C : Q, y: o }),
-                i.type === "question" && t.set(i.id, i.position),
-                (o += it));
-            }),
-            (o += at));
+      o.forEach((d, l) => {
+        let y = a + l * it;
+        ((d.position = { x: Q, y: y }), i.set(d.id, d.position));
+      }),
+      s.forEach((d, l) => {
+        let y = a + c + l * it;
+        d.position = { x: C, y: y };
+      }),
+      e.nodes
+        .filter((d) => d.type === "question" && d.visible === !1)
+        .forEach((d) => {
+          let l = i.get(d.anchorQuestionId) || i.get(d.id) || d.position;
+          d.position = l || { x: Q, y: a };
         }),
       e.nodes
-        .filter((s) => s.type === "question" && s.visible === !1)
-        .forEach((s) => {
-          let i = t.get(s.anchorQuestionId) || t.get(s.id) || s.position;
-          s.position = i || { x: Q, y: w };
-        }),
-      e.nodes
-        .filter((s) => s.type === "answer" && !s.position)
-        .forEach((s) => {
-          s.position = { x: C, y: w };
+        .filter((d) => d.type === "answer" && !d.position)
+        .forEach((d) => {
+          d.position = { x: C, y: a + c };
         }),
       (e.patternSummary = x(e.nodes)),
       (e.storageProgress = ct(e)),
@@ -347,6 +327,7 @@
     return {
       id: n?.id || `q-${crypto.randomUUID()}`,
       messageKey: e.key,
+      locator: e.locator || n?.locator || null,
       type: "question",
       content: e.content,
       thumbnailText: A(e.content, 48),
@@ -367,6 +348,7 @@
     return {
       id: n?.id || `a-${crypto.randomUUID()}`,
       messageKey: e.key,
+      locator: e.locator || n?.locator || null,
       type: "answer",
       content: e.content,
       thumbnailText: A(e.content, 72),
@@ -558,6 +540,23 @@
     let r = W();
     return (await L(r), await k(r.id), await K(r), r);
   }
+  async function vt() {
+    await H("readwrite", (e, r, n) => {
+      let t = e.clear();
+      ((t.onsuccess = () => r(!0)), (t.onerror = () => n(t.error)));
+    });
+    await chrome.storage.local.set({ [$]: [], [G]: null });
+    let e = W();
+    return (
+      await Promise.all([L(e), k(e.id), K(e)]),
+      T({ type: "SESSION_UPDATED", session: e }),
+      T({
+        type: "STATUS_UPDATE",
+        status: "本地会话存储已清空，并已创建新的空会话。",
+      }),
+      e
+    );
+  }
   function T(e) {
     try {
       chrome.runtime.sendMessage(e, () => {
@@ -641,6 +640,51 @@
       }
     }
   }
+  async function gt(e) {
+    let r = [];
+    try {
+      r = await chrome.tabs.query({ active: !0, currentWindow: !0 });
+    } catch {}
+    let n = r.find((t) => t?.id && ht(t.url));
+    if (!n) {
+      let t = await chrome.tabs.query({
+        url: [
+          "https://kimi.moonshot.cn/*",
+          "https://www.kimi.com/*",
+          "https://kimi.com/*",
+          "https://kimi.ai/*",
+        ],
+      });
+      n = t.find((o) => o?.id);
+    }
+    if (!n?.id)
+      return {
+        ok: !1,
+        error: "请先打开受支持的 Kimi 页面，再使用节点联动定位。",
+      };
+    let t = async () => {
+      try {
+        return await chrome.tabs.sendMessage(n.id, e);
+      } catch {
+        return null;
+      }
+    };
+    let o = await t();
+    if (o?.ok) return o;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: n.id },
+        files: ["content.js"],
+      });
+      await new Promise((s) => setTimeout(s, 120));
+      o = await t();
+      if (o?.ok) return o;
+    } catch {}
+    return {
+      ok: !1,
+      error: "未能定位到页面中的对应问答，请先刷新 Kimi 页面后重试。",
+    };
+  }
   chrome.action.onClicked.addListener(async (e) => {
     if (e?.id)
       try {
@@ -673,6 +717,19 @@
                   "\u5DF2\u521B\u5EFA\u65B0\u7684\u81EA\u52A8\u6293\u53D6\u4F1A\u8BDD\u3002",
               }),
               n({ ok: !0, session: t }));
+            return;
+          }
+          case "RESET_STORAGE": {
+            let t = await vt();
+            n({ ok: !0, session: t });
+            return;
+          }
+          case "FOCUS_NODE_IN_PAGE": {
+            let t = await gt({
+              type: "HIGHLIGHT_CAPTURED_MESSAGE",
+              payload: e.payload || {},
+            });
+            (t.ok || T({ type: "STATUS_UPDATE", status: t.error }), n(t));
             return;
           }
           case "REQUEST_PAGE_SYNC": {

@@ -80,12 +80,54 @@
     ".chat-message-content",
     ".response-content",
   ];
+  const DEFAULT_CAPTURE_PRESETS = {
+    generic: {
+      userSelectors: USER_SELECTORS,
+      assistantSelectors: ASSISTANT_SELECTORS,
+      messageSelectors: MESSAGE_SELECTORS,
+      contentSelectors: CONTENT_SELECTORS,
+      refSelector: "",
+      excludeSelectors: [],
+      scope: "all",
+    },
+    kimi: {
+      userSelectors: [".chat-content-item-user"],
+      assistantSelectors: [".chat-content-item-assistant"],
+      messageSelectors: [
+        ".chat-content-item-user",
+        ".chat-content-item-assistant",
+      ],
+      contentSelectors: CONTENT_SELECTORS,
+      refSelector: ".pua-ref-renderer--cite",
+      excludeSelectors: [
+        ".toolcall-container",
+        ".chat-content-item-actions",
+        ".chat-content-item-toolbar",
+        ".chat-content-item-footer",
+        "button",
+        "[role='button']",
+      ],
+      scope: "latest-answer",
+    },
+  };
+  if (!window.__CHATFLOW_CAPTURE_PRESETS__) {
+    window.__CHATFLOW_CAPTURE_PRESETS__ = DEFAULT_CAPTURE_PRESETS;
+  }
+  if (!window.__CHATFLOW_CAPTURE_ACTIVE__) {
+    window.__CHATFLOW_CAPTURE_ACTIVE__ = "kimi";
+  }
+  if (!window.__CHATFLOW_CAPTURE_OVERRIDES__) {
+    window.__CHATFLOW_CAPTURE_OVERRIDES__ = {};
+  }
+  const HIGHLIGHT_STYLE_ID = "chatflow-message-highlight-style";
+  const HIGHLIGHT_CLASS = "chatflow-message-highlight";
 
   let observer = null;
   let timer = null;
   let lastDigest = "";
   let forceNextCapture = false;
   let handleRuntimeMessage = null;
+  let activeHighlightedElement = null;
 
   function isExtensionContextInvalidated(error) {
     return String(error?.message || error || "").includes(
@@ -147,6 +189,50 @@
       .trim();
   }
 
+  function stripUiActionText(value) {
+    let text = String(value || "");
+    text = text
+      .replace(/(^|\s)(Edit|Copy|Share|Retry|Regenerate|Like|Dislike)(?=\s|$)/gi, " ")
+      .replace(/编辑\s*复制\s*分享/g, " ")
+      .replace(/(^|\s)(编辑|复制|分享|重试|重新生成|点赞|点踩|朗读|收藏)(?=\s|$)/g, " ");
+    return normalizeText(text);
+  }
+
+  function toArray(value, fallback = []) {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (typeof value === "string" && value.trim()) return [value.trim()];
+    return fallback.slice();
+  }
+
+  function resolveCaptureConfig() {
+    const presets = window.__CHATFLOW_CAPTURE_PRESETS__ || DEFAULT_CAPTURE_PRESETS;
+    const active = String(window.__CHATFLOW_CAPTURE_ACTIVE__ || "kimi").trim();
+    const base =
+      presets[active] || presets.generic || DEFAULT_CAPTURE_PRESETS.generic;
+    const overrides = window.__CHATFLOW_CAPTURE_OVERRIDES__ || {};
+    return {
+      userSelectors: toArray(overrides.userSelectors, toArray(base.userSelectors)),
+      assistantSelectors: toArray(
+        overrides.assistantSelectors,
+        toArray(base.assistantSelectors),
+      ),
+      messageSelectors: toArray(
+        overrides.messageSelectors,
+        toArray(base.messageSelectors),
+      ),
+      contentSelectors: toArray(
+        overrides.contentSelectors,
+        toArray(base.contentSelectors),
+      ),
+      excludeSelectors: toArray(
+        overrides.excludeSelectors,
+        toArray(base.excludeSelectors),
+      ),
+      refSelector: String(overrides.refSelector ?? base.refSelector ?? "").trim(),
+      scope: String(overrides.scope ?? base.scope ?? "all").trim(),
+    };
+  }
+
   function isVisible(element) {
     if (!element || insidePanel(element)) return false;
     const rect = element.getBoundingClientRect();
@@ -160,13 +246,33 @@
     );
   }
 
-  function elementText(element) {
-    for (const selector of CONTENT_SELECTORS) {
-      const content = element.querySelector(selector);
-      const text = normalizeText(content?.innerText || content?.textContent);
+  function removeExcludedNodes(root, excludeSelectors) {
+    if (!root || !excludeSelectors?.length) return;
+    for (const selector of excludeSelectors) {
+      root.querySelectorAll(selector).forEach((node) => node.remove());
+    }
+  }
+
+  function elementText(element, contentSelectors, excludeSelectors) {
+    if (!element) return "";
+    const source = element.cloneNode(true);
+    removeExcludedNodes(source, excludeSelectors);
+    for (const selector of contentSelectors) {
+      const content = source.querySelector(selector);
+      const text = stripUiActionText(content?.innerText || content?.textContent);
       if (text) return text;
     }
-    return normalizeText(element.innerText || element.textContent);
+    return stripUiActionText(source.innerText || source.textContent);
+  }
+
+  function extractRefText(element, refSelector, excludeSelectors) {
+    if (!element || !refSelector) return "";
+    const source = element.cloneNode(true);
+    removeExcludedNodes(source, excludeSelectors);
+    const refs = Array.from(source.querySelectorAll(refSelector))
+      .map((node) => stripUiActionText(node.innerText || node.textContent))
+      .filter(Boolean);
+    return Array.from(new Set(refs)).join("; ");
   }
 
   function signature(element) {
@@ -215,22 +321,46 @@
     return null;
   }
 
-  function collectBySelectors(type, selectors, priority) {
+  function collectBySelectors(
+    type,
+    selectors,
+    priority,
+    config,
+    latestAnswerElement = null,
+  ) {
     const results = [];
     for (const selector of selectors) {
       document.querySelectorAll(selector).forEach((element) => {
         if (!isVisible(element)) return;
-        const text = elementText(element);
+        let text = elementText(
+          element,
+          config.contentSelectors,
+          config.excludeSelectors,
+        );
+        if (
+          type === "answer" &&
+          config.refSelector &&
+          (config.scope !== "latest-answer" || element === latestAnswerElement)
+        ) {
+          const refText = extractRefText(
+            element,
+            config.refSelector,
+            config.excludeSelectors,
+          );
+          if (refText) {
+            text = text ? `${text}\n\u53C2\u8003\uff1a${refText}` : `\u53C2\u8003\uff1a${refText}`;
+          }
+        }
         if (text.length < 2 || text.length > 12000) return;
-        results.push({ type, element, text, priority });
+        results.push({ type, element, text, priority, selector });
       });
     }
     return results;
   }
 
-  function collectGeneric() {
+  function collectGeneric(config) {
     const results = [];
-    for (const selector of MESSAGE_SELECTORS) {
+    for (const selector of config.messageSelectors) {
       document.querySelectorAll(selector).forEach((element) => {
         if (!isVisible(element)) return;
         if (
@@ -241,9 +371,13 @@
         }
         const type = classify(element);
         if (!type) return;
-        const text = elementText(element);
+        const text = elementText(
+          element,
+          config.contentSelectors,
+          config.excludeSelectors,
+        );
         if (text.length < 2 || text.length > 12000) return;
-        results.push({ type, element, text, priority: 1 });
+        results.push({ type, element, text, priority: 1, selector });
       });
     }
     return results;
@@ -288,14 +422,86 @@
       : null;
   }
 
-  function extractMessages() {
-    const candidates = dedupeCandidates([
-      ...collectBySelectors("question", USER_SELECTORS, 3),
-      ...collectBySelectors("answer", ASSISTANT_SELECTORS, 3),
-      ...collectGeneric(),
+  function cssEscapeValue(value) {
+    let raw = String(value || "");
+    if (!raw) return "";
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return CSS.escape(raw);
+    }
+    return raw.replace(/["\\]/g, "\\$&");
+  }
+
+  function selectorPathOf(element, maxDepth = 8) {
+    if (!element || !(element instanceof Element)) return "";
+    const parts = [];
+    let current = element;
+    let depth = 0;
+    while (current && current !== document.body && depth < maxDepth) {
+      if (current.id) {
+        parts.unshift(`#${cssEscapeValue(current.id)}`);
+        break;
+      }
+      let part = current.tagName.toLowerCase();
+      const classToken = Array.from(current.classList || []).find(
+        (token) => token && !token.startsWith("chatflow-"),
+      );
+      if (classToken) part += `.${cssEscapeValue(classToken)}`;
+      const parent = current.parentElement;
+      if (parent) {
+        const sameTagSiblings = Array.from(parent.children).filter(
+          (child) => child.tagName === current.tagName,
+        );
+        if (sameTagSiblings.length > 1) {
+          const nth = sameTagSiblings.indexOf(current) + 1;
+          part += `:nth-of-type(${nth})`;
+        }
+      }
+      parts.unshift(part);
+      current = parent;
+      depth += 1;
+    }
+    return parts.join(" > ");
+  }
+
+  function buildLocator(item, explicitId, order, globalIndex) {
+    return {
+      explicitId: explicitId || "",
+      type: item.type,
+      order,
+      globalIndex,
+      selectorPath: selectorPathOf(item.element),
+      sourceSelector: item.selector || "",
+    };
+  }
+
+  function collectConfiguredCandidates(config) {
+    const answerElements = [];
+    for (const selector of config.assistantSelectors) {
+      document.querySelectorAll(selector).forEach((element) => {
+        if (isVisible(element)) answerElements.push(element);
+      });
+    }
+    const latestAnswerElement = answerElements
+      .sort((a, b) => documentOrder(a, b))
+      .at(-1);
+    return dedupeCandidates([
+      ...collectBySelectors("question", config.userSelectors, 3, config),
+      ...collectBySelectors(
+        "answer",
+        config.assistantSelectors,
+        3,
+        config,
+        latestAnswerElement || null,
+      ),
+      ...collectGeneric(config),
     ]);
+  }
+
+  function extractMessages() {
+    const config = resolveCaptureConfig();
+    const candidates = collectConfiguredCandidates(config);
     const counters = { question: 0, answer: 0 };
-    return candidates.map((item) => {
+    return candidates.map((item, globalIndex) => {
       const explicitId =
         item.element.getAttribute("data-message-id") ||
         item.element.getAttribute("data-id") ||
@@ -311,13 +517,179 @@
         type: item.type,
         content: item.text,
         timestamp: timestampOf(item.element),
+        locator: buildLocator(item, explicitId, order, globalIndex),
       };
     });
   }
 
+  function ensureHighlightStyle() {
+    if (document.getElementById(HIGHLIGHT_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = HIGHLIGHT_STYLE_ID;
+    style.textContent = `
+      .${HIGHLIGHT_CLASS} {
+        outline: 3px solid #f59e0b !important;
+        outline-offset: 2px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.24) !important;
+        background: rgba(251, 191, 36, 0.14) !important;
+        transition: box-shadow 220ms ease, background-color 220ms ease;
+      }
+    `;
+    document.documentElement.appendChild(style);
+  }
+
+  function collectMessageCandidates() {
+    const config = resolveCaptureConfig();
+    const candidates = collectConfiguredCandidates(config);
+    const counters = { question: 0, answer: 0 };
+    return candidates.map((item, globalIndex) => {
+      const explicitId =
+        item.element.getAttribute("data-message-id") ||
+        item.element.getAttribute("data-id") ||
+        item.element.dataset?.messageId ||
+        item.element.dataset?.id;
+      const order = counters[item.type];
+      counters[item.type] += 1;
+      return {
+        element: item.element,
+        type: item.type,
+        content: item.text,
+        key: explicitId
+          ? `${item.type}:${explicitId}`
+          : `${item.type}:${order}`,
+        locator: buildLocator(item, explicitId, order, globalIndex),
+      };
+    });
+  }
+
+  function findCandidateByLocator(locator, candidates) {
+    if (!locator || typeof locator !== "object") return null;
+    const explicitId = String(locator.explicitId || "").trim();
+    if (explicitId) {
+      const escaped = cssEscapeValue(explicitId);
+      const byId = document.querySelector(
+        `[data-message-id="${escaped}"], [data-id="${escaped}"]`,
+      );
+      if (byId && isVisible(byId)) {
+        const match = candidates.find(
+          (item) =>
+            item.element === byId ||
+            item.element.contains(byId) ||
+            byId.contains(item.element),
+        );
+        if (match) return match;
+      }
+      const byKey = candidates.find(
+        (item) => item.locator?.explicitId === explicitId,
+      );
+      if (byKey) return byKey;
+    }
+    const selectorPath = String(locator.selectorPath || "").trim();
+    if (selectorPath) {
+      try {
+        const element = document.querySelector(selectorPath);
+        if (element && isVisible(element)) {
+          const match = candidates.find(
+            (item) =>
+              item.element === element ||
+              item.element.contains(element) ||
+              element.contains(item.element),
+          );
+          if (match) return match;
+        }
+      } catch {
+        // Ignore invalid selector path.
+      }
+    }
+    const type = String(locator.type || "").trim();
+    const order = Number(locator.order);
+    if (type && Number.isInteger(order) && order >= 0) {
+      const byOrder = candidates.filter((item) => item.type === type)[order];
+      if (byOrder) return byOrder;
+    }
+    const globalIndex = Number(locator.globalIndex);
+    if (Number.isInteger(globalIndex) && globalIndex >= 0) {
+      return candidates[globalIndex] || null;
+    }
+    return null;
+  }
+
+  function findCandidateByPayload(payload = {}) {
+    const candidates = collectMessageCandidates();
+    if (!candidates.length) return null;
+    const locator = payload.locator || null;
+    const locatorMatch = findCandidateByLocator(locator, candidates);
+    if (locatorMatch) return locatorMatch;
+    const messageKey = String(payload.messageKey || "").trim();
+    const messageType = String(payload.type || "").trim();
+    const messageContent = normalizeText(payload.content || "");
+    if (messageKey) {
+      const exact = candidates.find((item) => item.key === messageKey);
+      if (exact) return exact;
+    }
+    if (messageType && messageContent) {
+      const exactContent = candidates.find(
+        (item) =>
+          item.type === messageType &&
+          normalizeText(item.content) === messageContent,
+      );
+      if (exactContent) return exactContent;
+      const includeContent = candidates.find((item) => {
+        if (item.type !== messageType) return false;
+        const normalized = normalizeText(item.content);
+        if (!normalized) return false;
+        return (
+          normalized.includes(messageContent.slice(0, 120)) ||
+          messageContent.includes(normalized.slice(0, 120))
+        );
+      });
+      if (includeContent) return includeContent;
+    }
+    if (messageContent) {
+      return (
+        candidates.find(
+          (item) => normalizeText(item.content) === messageContent,
+        ) || null
+      );
+    }
+    return null;
+  }
+
+  function focusAndHighlightMessage(payload = {}) {
+    const candidate = findCandidateByPayload(payload);
+    if (!candidate?.element) {
+      return { ok: false, error: "未在当前页面定位到对应对话节点。" };
+    }
+    ensureHighlightStyle();
+    if (
+      activeHighlightedElement &&
+      activeHighlightedElement !== candidate.element
+    ) {
+      activeHighlightedElement.classList.remove(HIGHLIGHT_CLASS);
+    }
+    activeHighlightedElement = candidate.element;
+    candidate.element.classList.add(HIGHLIGHT_CLASS);
+    candidate.element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    window.setTimeout(() => {
+      candidate.element?.classList?.remove(HIGHLIGHT_CLASS);
+      if (activeHighlightedElement === candidate.element) {
+        activeHighlightedElement = null;
+      }
+    }, 2600);
+    return { ok: true };
+  }
+
   function digest(messages) {
     return messages
-      .map((message) => `${message.key}:${message.content}`)
+      .map((message) => {
+        const locator = message.locator || {};
+        return `${message.key}:${message.content}:${locator.explicitId || ""}:${locator.order ?? ""}:${locator.selectorPath || ""}`;
+      })
       .join("||");
   }
 
@@ -543,6 +915,10 @@
         );
       return true;
     }
+    if (message?.type === "HIGHLIGHT_CAPTURED_MESSAGE") {
+      sendResponse(focusAndHighlightMessage(message.payload || {}));
+      return false;
+    }
     return false;
   };
 
@@ -572,3 +948,4 @@
 
   startObserver();
 })();
+

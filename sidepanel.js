@@ -12242,6 +12242,18 @@ Error generating stack: ` +
     Ih = "#165DFF",
     sl = 112,
     al = 96,
+    Ph = {
+      questionSize: sl,
+      questionFont: 15,
+      answerSize: al,
+      answerFont: 15,
+      solidWidth: 2,
+      solidColor: ea,
+      dashedWidth: 2,
+      dashedColor: ea,
+      wavyWidth: 2,
+      wavyColor: "#000000",
+    },
     Lh = 28,
     Dh = -24,
     cl = {
@@ -12301,15 +12313,6 @@ Error generating stack: ` +
         ? "quality-low"
         : "quality-medium";
   }
-  function xg(e) {
-    return e.style === "semantic-wavy"
-      ? { stroke: "#000000", dasharray: "0", variant: "wavy" }
-      : e.style === "dashed"
-        ? { stroke: ea, dasharray: "8 6", variant: "line" }
-        : e.style === "dotted"
-          ? { stroke: ea, dasharray: "2 7", variant: "line" }
-          : { stroke: ea, dasharray: "0", variant: "line" };
-  }
   function _g(e) {
     let t = e.x1,
       n = e.y1,
@@ -12333,22 +12336,6 @@ Error generating stack: ` +
       h += ` Q ${c} ${f} ${x} ${_}`;
     }
     return h;
-  }
-  function Fh(e) {
-    return e.type === "question"
-      ? { width: sl, height: sl }
-      : { width: al, height: al };
-  }
-  function Sg(e, t) {
-    let n = Fh(e),
-      r = Fh(t),
-      i = e.position.x <= t.position.x;
-    return {
-      x1: i ? e.position.x + n.width / 2 : e.position.x - n.width / 2,
-      y1: e.position.y,
-      x2: i ? t.position.x - r.width / 2 : t.position.x + r.width / 2,
-      y2: t.position.y,
-    };
   }
   function na(e, t) {
     return !t || !e?.nodes ? null : e.nodes.find((n) => n.id === t.id) || null;
@@ -12401,6 +12388,7 @@ Error generating stack: ` +
     session: e,
     nodeLabels: t,
     onSelectNode: n,
+    onLocateNode: qn,
     zoom: r,
     setZoom: i,
   }) {
@@ -12409,6 +12397,7 @@ Error generating stack: ` +
       u = (0, g.useRef)(null),
       [s, a] = (0, g.useState)(null),
       [d, m] = (0, g.useState)({ x: 18, y: 18 }),
+      [B, U] = (0, g.useState)(() => ({ ...Ph })),
       h = (0, g.useMemo)(() => {
         let N = (e?.nodes || []).filter((p) => p.visible !== !1),
           c = new Map(N.map((p) => [p.id, p])),
@@ -12434,7 +12423,7 @@ Error generating stack: ` +
         let N = Ae(o.current),
           c = Ae(l.current),
           f = bs()
-            .scaleExtent([0.65, 2])
+            .scaleExtent([0.325, 2])
             .on("zoom", (p) => {
               (c.attr("transform", p.transform.toString()),
                 i(Number(p.transform.k.toFixed(2))));
@@ -12447,9 +12436,377 @@ Error generating stack: ` +
           }
         );
       }, [i, r]),
+      (0, g.useEffect)(() => {
+        if (!l.current) return;
+        let N = Ae(l.current);
+        N.selectAll("*").remove();
+        let c = new Map(),
+          f = [];
+        function pz(P) {
+          return P.type === "question"
+            ? {
+                width: Math.round(B.questionSize * 1.28),
+                height: Math.max(40, Math.round(B.questionSize * 0.64)),
+                font: B.questionFont,
+              }
+            : {
+                width: Math.round(B.answerSize * 1.32),
+                height: Math.max(38, Math.round(B.answerSize * 0.62)),
+                font: B.answerFont,
+              };
+        }
+        function yz(P, M) {
+          let E = pz(P),
+            I = pz(M),
+            G = P.position.x <= M.position.x;
+          return {
+            x1: G ? P.position.x + E.width / 2 : P.position.x - E.width / 2,
+            y1: P.position.y,
+            x2: G ? M.position.x - I.width / 2 : M.position.x + I.width / 2,
+            y2: M.position.y,
+          };
+        }
+        function bz(P) {
+          return P.style === "semantic-wavy"
+            ? {
+                variant: "wavy",
+                stroke: B.wavyColor,
+                width: B.wavyWidth,
+                dasharray: "0",
+              }
+            : P.style === "dashed"
+              ? {
+                  variant: "line",
+                  stroke: B.dashedColor,
+                  width: B.dashedWidth,
+                  dasharray: "8 6",
+                }
+              : P.style === "dotted"
+                ? {
+                    variant: "line",
+                    stroke: B.dashedColor,
+                    width: B.dashedWidth,
+                    dasharray: "2 7",
+                  }
+                : {
+                    variant: "line",
+                    stroke: B.solidColor,
+                    width: B.solidWidth,
+                    dasharray: "0",
+                  };
+        }
+        function p(P) {
+          let M = P.source,
+            E = P.target;
+          if (!M || !E) return;
+          let I = bz(P),
+            G = yz(M, E),
+            W =
+              I.variant === "wavy"
+                ? N.append("path")
+                    .attr("fill", "none")
+                    .attr("stroke-linecap", "round")
+                    .attr("stroke-linejoin", "round")
+                : N.append("line").attr("stroke-dasharray", I.dasharray);
+          W.attr("stroke", I.stroke).attr("stroke-width", I.width);
+          f.push({ edge: P, element: W, variant: I.variant });
+          I.variant === "wavy"
+            ? W.attr("d", _g(G))
+            : W.attr("x1", G.x1)
+                .attr("y1", G.y1)
+                .attr("x2", G.x2)
+                .attr("y2", G.y2);
+        }
+        function w() {
+          f.forEach(({ edge: P, element: M, variant: E }) => {
+            let I = yz(P.source, P.target),
+              G = bz(P);
+            (M.attr("stroke", G.stroke).attr("stroke-width", G.width),
+              E === "line" && M.attr("stroke-dasharray", G.dasharray));
+            E === "wavy"
+              ? M.attr("d", _g(I))
+              : M.attr("x1", I.x1)
+                  .attr("y1", I.y1)
+                  .attr("x2", I.x2)
+                  .attr("y2", I.y2);
+          });
+        }
+        function C(P, M) {
+          let E = c.get(P.id);
+          if (E)
+            E.attr(
+              "transform",
+              `translate(${P.position.x - M.width / 2} ${P.position.y - M.height / 2})`,
+            );
+        }
+        function T(P, M, E) {
+          let I = l.current?.ownerSVGElement;
+          if (!I) return;
+          E.preventDefault();
+          E.stopPropagation();
+          I.setPointerCapture?.(E.pointerId);
+          let G = Et(E, l.current),
+            W = P.position.x - G[0],
+            ze = P.position.y - G[1],
+            se = 8,
+            F = (j) => {
+              let q = Et(j, l.current);
+              (Math.abs(q[0] - G[0]) > se || Math.abs(q[1] - G[1]) > se) &&
+                (P.__dragging = !0);
+              ((P.position = { x: q[0] + W, y: q[1] + ze }),
+                C(P, M),
+                w(),
+                a(P));
+            },
+            V = (j) => {
+              (I.releasePointerCapture?.(j.pointerId),
+                I.removeEventListener("pointermove", F),
+                I.removeEventListener("pointerup", V),
+                I.removeEventListener("pointercancel", V));
+              window.setTimeout(() => {
+                P.__dragging = !1;
+              }, 0);
+            };
+          P.__dragging = !1;
+          (I.addEventListener("pointermove", F),
+            I.addEventListener("pointerup", V),
+            I.addEventListener("pointercancel", V));
+        }
+        h.edges.forEach(p);
+        h.nodes.forEach((P) => {
+          let M = P.type === "question",
+            E = pz(P).width,
+            I = pz(P).height,
+            G = P.position.x - E / 2,
+            W = P.position.y - I / 2,
+            ze = M ? Ih : Mh[P.quality] || Mh.medium,
+            F = t.get(P.id) || (M ? "\u63D0\u95EE" : "\u56DE\u7B54"),
+            V = M ? "#FFFFFF" : Oh[P.quality] || Oh.medium,
+            j = null,
+            K = null,
+            Ye = null;
+          j = N.append("g")
+            .attr("transform", `translate(${G} ${W})`)
+            .style("cursor", "pointer")
+            .style("touch-action", "none")
+            .on("mouseenter", (j) => {
+              (x(P, j),
+                Ye && (window.clearTimeout(Ye), (Ye = null)),
+                K && K.style("display", null));
+            })
+            .on("mousemove", (j) => _(j))
+            .on("mouseleave", () => {
+              (a(null),
+                Ye && window.clearTimeout(Ye),
+                (Ye = window.setTimeout(() => {
+                  K && K.style("display", "none");
+                }, 500)));
+            })
+            .on("pointerdown", (j) => T(P, { width: E, height: I }, j))
+            .on("click", (j) => {
+              if (P.__dragging) {
+                (j.preventDefault(), j.stopPropagation());
+                return;
+              }
+              n(P);
+            });
+          c.set(P.id, j);
+          M
+            ? j
+                .append("ellipse")
+                .attr("cx", E / 2)
+                .attr("cy", I / 2)
+                .attr("rx", E / 2)
+                .attr("ry", I / 2)
+                .attr("fill", ze)
+                .attr("stroke", ze)
+                .attr("stroke-width", 1.5)
+            : j
+                .append("rect")
+                .attr("width", E)
+                .attr("height", I)
+                .attr("rx", Math.max(10, Math.round(I * 0.32)))
+                .attr("fill", ze)
+                .attr("stroke", ze)
+                .attr("stroke-width", 1.5);
+          j.append("foreignObject")
+            .attr("width", E)
+            .attr("height", I)
+            .style("pointer-events", "none")
+            .append("xhtml:div")
+            .attr("class", "node-label solid-node")
+                .append("xhtml:span")
+                .attr("class", "node-seq")
+                .style("color", V)
+                .style("font-size", `${pz(P).font}px`)
+                .text(F);
+          K = j
+            .append("g")
+            .attr("class", "node-info-button")
+            .attr(
+              "transform",
+              `translate(${E + 12} ${Math.max(6, Math.round(I / 2 - 12))})`,
+            )
+            .style("display", "none")
+            .style("cursor", "pointer");
+          K.append("circle")
+            .attr("cx", 12)
+            .attr("cy", 12)
+            .attr("r", 12)
+            .attr("fill", "#FFFFFF")
+            .attr("stroke", "#165DFF")
+            .attr("stroke-width", 1.5);
+          K.append("path")
+            .attr(
+              "d",
+              "M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zM224 160a32 32 0 1 1 64 0 32 32 0 1 1 -64 0zm-8 64l48 0c13.3 0 24 10.7 24 24l0 88 8 0c13.3 0 24 10.7 24 24s-10.7 24-24 24l-80 0c-13.3 0-24-10.7-24-24s10.7-24 24-24l24 0 0-64-24 0c-13.3 0-24-10.7-24-24s10.7-24 24-24z",
+            )
+            .attr("fill", "#165DFF")
+            .attr("transform", "translate(4 4) scale(0.03125)");
+          K.on("pointerdown", (q) => {
+            (q.preventDefault(), q.stopPropagation());
+          }).on("click", (q) => {
+            (q.preventDefault(), q.stopPropagation(), qn?.(P));
+          });
+          P.tags?.length &&
+            j
+              .append("circle")
+              .attr("class", "annotation-dot")
+              .attr("cx", E - 10)
+              .attr("cy", 10)
+              .attr("r", 6)
+              .attr("fill", "#FFFFFF")
+              .attr("stroke", Ih)
+              .attr("stroke-width", 2);
+        });
+      }, [B, h, n, qn, t]),
       g.default.createElement(
         "div",
         { ref: u, className: "canvas-panel" },
+        g.default.createElement(
+              "div",
+              { className: "d3-control-panel" },
+              g.default.createElement(
+                "label",
+                null,
+                "提问节点",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "72",
+                  max: "180",
+                  step: "2",
+                  value: B.questionSize,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, questionSize: Number(N.target.value) })),
+                }),
+                g.default.createElement("span", null, B.questionSize),
+              ),
+              g.default.createElement(
+                "label",
+                null,
+                "提问字体",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "10",
+                  max: "28",
+                  step: "1",
+                  value: B.questionFont,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, questionFont: Number(N.target.value) })),
+                }),
+                g.default.createElement("span", null, B.questionFont),
+              ),
+              g.default.createElement(
+                "label",
+                null,
+                "回答节点",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "64",
+                  max: "180",
+                  step: "2",
+                  value: B.answerSize,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, answerSize: Number(N.target.value) })),
+                }),
+                g.default.createElement("span", null, B.answerSize),
+              ),
+              g.default.createElement(
+                "label",
+                null,
+                "回答字体",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "10",
+                  max: "28",
+                  step: "1",
+                  value: B.answerFont,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, answerFont: Number(N.target.value) })),
+                }),
+                g.default.createElement("span", null, B.answerFont),
+              ),
+              g.default.createElement(
+                "label",
+                null,
+                "实线",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "1",
+                  max: "8",
+                  step: "0.5",
+                  value: B.solidWidth,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, solidWidth: Number(N.target.value) })),
+                }),
+                g.default.createElement("input", {
+                  type: "color",
+                  value: B.solidColor,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, solidColor: N.target.value })),
+                }),
+              ),
+              g.default.createElement(
+                "label",
+                null,
+                "虚线",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "1",
+                  max: "8",
+                  step: "0.5",
+                  value: B.dashedWidth,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, dashedWidth: Number(N.target.value) })),
+                }),
+                g.default.createElement("input", {
+                  type: "color",
+                  value: B.dashedColor,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, dashedColor: N.target.value })),
+                }),
+              ),
+              g.default.createElement(
+                "label",
+                null,
+                "\u6CE2\u6D6A\u7EBF",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "1",
+                  max: "8",
+                  step: "0.5",
+                  value: B.wavyWidth,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, wavyWidth: Number(N.target.value) })),
+                }),
+                g.default.createElement("input", {
+                  type: "color",
+                  value: B.wavyColor,
+                  onChange: (N) =>
+                    U((c) => ({ ...c, wavyColor: N.target.value })),
+                }),
+              ),
+            ),
         h.nodes.length
           ? null
           : g.default.createElement(
@@ -12475,100 +12832,11 @@ Error generating stack: ` +
           { ref: o, className: "canvas-svg", viewBox: "0 0 920 702" },
           g.default.createElement(
             "g",
-            { ref: l, transform: `translate(${Lh} ${Dh}) scale(${r})` },
-            h.edges.map((N) => {
-              let c = N.source,
-                f = N.target;
-              if (!c || !f) return null;
-              let p = xg(N),
-                w = Sg(c, f);
-              return p.variant === "wavy"
-                ? g.default.createElement("path", {
-                    key: N.id,
-                    d: _g(w),
-                    fill: "none",
-                    stroke: p.stroke,
-                    strokeWidth: "2",
-                    strokeLinecap: "round",
-                    strokeLinejoin: "round",
-                  })
-                : g.default.createElement("line", {
-                    key: N.id,
-                    x1: w.x1,
-                    y1: w.y1,
-                    x2: w.x2,
-                    y2: w.y2,
-                    stroke: p.stroke,
-                    strokeWidth: "2",
-                    strokeDasharray: p.dasharray,
-                  });
-            }),
-            h.nodes.map((N) => {
-              let c = N.type === "question",
-                f = c ? sl : al,
-                p = c ? sl : al,
-                w = N.position.x - f / 2,
-                C = N.position.y - p / 2,
-                T = c ? Ih : Mh[N.quality] || Mh.medium,
-                P = t.get(N.id) || (c ? "\u63D0\u95EE" : "\u56DE\u7B54"),
-                M = c ? "#FFFFFF" : Oh[N.quality] || Oh.medium;
-              return g.default.createElement(
-                "g",
-                {
-                  key: N.id,
-                  transform: `translate(${w} ${C})`,
-                  "data-id": c ? String(N.id) : void 0,
-                  "data-parent-id": c ? void 0 : String(N.questionId || ""),
-                  "data-conversation-id": String(N.conversationId || ""),
-                  onMouseEnter: (E) => x(N, E),
-                  onMouseMove: _,
-                  onMouseLeave: () => a(null),
-                  onClick: () => n(N),
-                  style: { cursor: "pointer" },
-                },
-                c
-                  ? g.default.createElement("circle", {
-                      cx: f / 2,
-                      cy: p / 2,
-                      r: f / 2,
-                      fill: T,
-                      stroke: T,
-                      strokeWidth: "1.5",
-                    })
-                  : g.default.createElement("rect", {
-                      width: f,
-                      height: p,
-                      rx: "6",
-                      fill: T,
-                      stroke: T,
-                      strokeWidth: "1.5",
-                    }),
-                g.default.createElement(
-                  "foreignObject",
-                  { width: f, height: p },
-                  g.default.createElement(
-                    "div",
-                    { className: "node-label solid-node" },
-                    g.default.createElement(
-                      "span",
-                      { className: "node-seq", style: { color: M } },
-                      P,
-                    ),
-                  ),
-                ),
-                N.tags?.length
-                  ? g.default.createElement("circle", {
-                      className: "annotation-dot",
-                      cx: f - 10,
-                      cy: "10",
-                      r: "6",
-                      fill: "#FFFFFF",
-                      stroke: Ih,
-                      strokeWidth: "2",
-                    })
-                  : null,
-              );
-            }),
+            {
+              key: "d3",
+              ref: l,
+              transform: `translate(${Lh} ${Dh}) scale(${r})`,
+            },
           ),
         ),
         s
@@ -12694,16 +12962,15 @@ Error generating stack: ` +
       );
     }
     async function f() {
-      let E = await Ct("CREATE_NEW_SESSION");
+      let E = await Ct("RESET_STORAGE");
       if (!E?.ok || !E.session) {
-        u(E?.error || "\u65B0\u5EFA\u4F1A\u8BDD\u5931\u8D25\u3002");
+        u(E?.error || "\u91CD\u7F6E\u5B58\u50A8\u5931\u8D25\u3002");
         return;
       }
       (t(E.session),
         a(null),
-        u(
-          "\u5DF2\u521B\u5EFA\u65B0\u7684\u81EA\u52A8\u6293\u53D6\u4F1A\u8BDD\u3002",
-        ));
+        r([E.session]),
+        u("\u672C\u5730\u5B58\u50A8\u5DF2\u91CD\u7F6E\u3002"));
     }
     async function p() {
       let E = await Ct("RESET_LAYOUT");
@@ -12805,6 +13072,21 @@ ${s.content}`;
         u("\u5206\u4EAB\u5931\u8D25\u3002");
       }
     }
+    async function Jt(E) {
+      if (!E) return;
+      u("\u6B63\u5728\u5B9A\u4F4D\u8282\u70B9\u5230\u5BF9\u8BDD\u9875\u9762...");
+      let L = await Ct("FOCUS_NODE_IN_PAGE", {
+        nodeId: E.id,
+        messageKey: E.messageKey,
+        locator: E.locator || null,
+        type: E.type,
+        content: E.content,
+        createdAt: E.createdAt,
+      });
+      L?.ok
+        ? u("\u5DF2\u5B9A\u4F4D\u5230\u5BF9\u5E94\u5BF9\u8BDD\u4F4D\u7F6E\u3002")
+        : L?.error && u(L.error);
+    }
     return g.default.createElement(
       "main",
       { className: "shell" },
@@ -12839,7 +13121,7 @@ ${s.content}`;
             g.default.createElement(
               "button",
               { type: "button", className: "ghost-button", onClick: f },
-              "\u65B0\u5EFA\u4F1A\u8BDD",
+              "\u91CD\u7F6E\u5B58\u50A8",
             ),
           ),
         ),
@@ -12901,19 +13183,6 @@ ${s.content}`;
             { className: "toolbar" },
             g.default.createElement(
               "button",
-              {
-                type: "button",
-                onClick: () => o((E) => Math.max(0.65, E - 0.1)),
-              },
-              "\u7F29\u5C0F",
-            ),
-            g.default.createElement(
-              "button",
-              { type: "button", onClick: () => o((E) => Math.min(2, E + 0.1)) },
-              "\u653E\u5927",
-            ),
-            g.default.createElement(
-              "button",
               { type: "button", onClick: p },
               "\u91CD\u7F6E",
             ),
@@ -12933,6 +13202,7 @@ ${s.content}`;
           session: e,
           nodeLabels: x,
           onSelectNode: a,
+          onLocateNode: Jt,
           zoom: i,
           setZoom: o,
         }),
