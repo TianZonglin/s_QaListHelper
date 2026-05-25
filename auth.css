@@ -1,6 +1,6 @@
 .chatflow-auth-root {
   position: relative;
-  z-index: 2;
+  z-index: 1000;
   display: block;
   pointer-events: auto;
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -75,12 +75,14 @@
 .chatflow-auth-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 1001;
   background: rgba(8, 24, 58, 0.08);
   backdrop-filter: blur(4px);
 }
 
 .chatflow-auth-panel {
   position: absolute;
+  z-index: 1002;
   top: calc(100% + 12px);
   right: 0;
   width: 296px;

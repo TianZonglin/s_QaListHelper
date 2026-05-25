@@ -13351,22 +13351,15 @@ ${s.content}`;
           g.default.createElement(
             "div",
             { className: "capture-actions" },
-            g.default.createElement(
-              "button",
-              { type: "button", onClick: c },
-              "\u7ACB\u5373\u540C\u6B65",
-            ),
-            g.default.createElement(
-              "button",
-              { type: "button", className: "ghost-button", onClick: f },
-              "\u91CD\u7F6E\u5B58\u50A8",
-            ),
           ),
         ),
         g.default.createElement("div", { className: "status-line" }, l),
         g.default.createElement(
           "div",
-          { className: "capture-stats" },
+          { className: "capture-stats with-actions" },
+          g.default.createElement(
+            "div",
+            { className: "capture-stat-grid" },
           g.default.createElement(
             "div",
             { className: "stat-card" },
@@ -13389,6 +13382,21 @@ ${s.content}`;
               "%",
             ),
             g.default.createElement("span", null, "\u672C\u5730\u5B58\u50A8"),
+          ),
+          ),
+          g.default.createElement(
+            "div",
+            { className: "capture-inline-actions" },
+            g.default.createElement(
+              "button",
+              { type: "button", className: "pill-action", onClick: c },
+              "\u7ACB\u5373\u540C\u6B65",
+            ),
+            g.default.createElement(
+              "button",
+              { type: "button", className: "pill-action", onClick: f },
+              "\u91CD\u7F6E\u5B58\u50A8",
+            ),
           ),
         ),
       ),
@@ -13452,7 +13460,7 @@ ${s.content}`;
         { className: "footer" },
         g.default.createElement(
           "div",
-          { className: "footer-head" },
+          { className: "footer-head footer-inline" },
           g.default.createElement(
             "strong",
             null,
@@ -13483,37 +13491,15 @@ ${s.content}`;
               e?.patternSummary?.repeat_correction || 0,
             ),
           ),
-        ),
-        g.default.createElement(
-          "div",
-          { className: "footer-actions" },
           g.default.createElement(
             "button",
-            { type: "button", onClick: () => m(!0) },
+            { type: "button", className: "pill-action", onClick: () => m(!0) },
             "\u8D28\u91CF\u8BE6\u60C5",
           ),
           g.default.createElement(
             "button",
-            { type: "button", onClick: C },
+            { type: "button", className: "pill-action", onClick: C },
             "\u6570\u636E\u5BFC\u51FA",
-          ),
-        ),
-        g.default.createElement(
-          "div",
-          { className: "progress-wrap" },
-          g.default.createElement(
-            "span",
-            null,
-            "\u5B58\u50A8\u8FDB\u5EA6 ",
-            e?.storageProgress || 0,
-            "%",
-          ),
-          g.default.createElement(
-            "div",
-            { className: "progress-bar" },
-            g.default.createElement("span", {
-              style: { width: `${e?.storageProgress || 0}%` },
-            }),
           ),
         ),
       ),
