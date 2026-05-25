@@ -578,6 +578,10 @@ input {
   flex-wrap: wrap;
 }
 
+.footer-head.footer-inline .pill-action:first-of-type {
+  margin-left: auto;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
