@@ -184,6 +184,11 @@ input {
   padding: 0 10px;
 }
 
+.toolbar button.active {
+  background: #0f3fb7;
+  box-shadow: 0 10px 20px rgba(15, 63, 183, 0.24);
+}
+
 .capture-actions .ghost-button {
   background:
     linear-gradient(
@@ -287,6 +292,20 @@ input {
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
 }
 
+.d3-control-panel > button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.d3-control-panel > button.active {
+  background: #0f3fb7;
+  box-shadow: 0 10px 20px rgba(15, 63, 183, 0.24);
+}
+
 .d3-control-panel label {
   display: grid;
   grid-template-columns: 72px 1fr auto;
@@ -307,6 +326,81 @@ input {
   padding: 0;
   border: 0;
   background: transparent;
+  cursor: pointer;
+}
+
+.lasso-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.lasso-overlay.active {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.lasso-overlay-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lasso-polyline {
+  fill: rgba(22, 93, 255, 0.12);
+  stroke: #165dff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 6 4;
+}
+
+.lasso-batch-panel {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  margin-top: 2px;
+  border-radius: 12px;
+  border: 1px solid rgba(22, 93, 255, 0.22);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+}
+
+.canvas-panel > .lasso-batch-panel {
+  display: none;
+}
+
+.lasso-batch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lasso-batch-panel label {
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.lasso-batch-panel input[type="number"] {
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+}
+
+.lasso-batch-panel button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
   cursor: pointer;
 }
 

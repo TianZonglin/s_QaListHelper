@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   var $h = Object.create;
   var oa = Object.defineProperty;
   var Uh = Object.getOwnPropertyDescriptor;
@@ -12389,6 +12389,8 @@ Error generating stack: ` +
     nodeLabels: t,
     onSelectNode: n,
     onLocateNode: qn,
+    lassoMode: Ln,
+    setLassoMode: Dn,
     zoom: r,
     setZoom: i,
   }) {
@@ -12398,12 +12400,143 @@ Error generating stack: ` +
       [s, a] = (0, g.useState)(null),
       [d, m] = (0, g.useState)({ x: 18, y: 18 }),
       [B, U] = (0, g.useState)(() => ({ ...Ph })),
+      [Ve, Be] = (0, g.useState)(() => ({ ...Ph })),
+      [kn, pn] = (0, g.useState)([]),
+      [Sn, Cn] = (0, g.useState)([]),
+      [Mn, En] = (0, g.useState)(0),
+      Wn = (0, g.useRef)({ drawing: !1, points: [], screen: [] }),
+      Nn = (0, g.useRef)([]),
       h = (0, g.useMemo)(() => {
         let N = (e?.nodes || []).filter((p) => p.visible !== !1),
           c = new Map(N.map((p) => [p.id, p])),
           f = Eg(N, e?.edges || []);
         return { nodes: N, edges: f, nodeMap: c };
-      }, [e]);
+      }, [e]),
+      zn = (0, g.useMemo)(() => new Set(Sn), [Sn]);
+    (0, g.useEffect)(() => {
+      Nn.current = kn;
+    }, [kn]);
+    (0, g.useEffect)(() => {
+      Sn.length || Be({ ...B });
+    }, [B, Sn.length]);
+    function Rn(N, c) {
+      let f = N.x,
+        p = N.y,
+        w = !1;
+      for (let C = 0, T = c.length - 1; C < c.length; T = C++) {
+        let P = c[C].x,
+          M = c[C].y,
+          E = c[T].x,
+          I = c[T].y;
+        M > p != I > p &&
+          f < ((E - P) * (p - M)) / (I - M || 1e-6) + P &&
+          (w = !w);
+      }
+      return w;
+    }
+    function Qn(N) {
+      if (!Array.isArray(N) || N.length < 3) {
+        (Cn([]), En((c) => c + 1));
+        return;
+      }
+      let c = h.nodes
+        .filter((f) => f?.position && Rn(f.position, N))
+        .map((f) => f.id);
+      (Cn(c), En((f) => f + 1));
+    }
+    function Hr(N) {
+      if (Sn.length) {
+        let p = N(Ve),
+          w = Object.keys(p).filter((C) => p[C] !== Ve[C]);
+        (Be(p),
+          w.length &&
+            (Sn.forEach((C) => {
+              let T = h.nodeMap.get(C);
+              if (!T) return;
+              (w.includes("questionSize") &&
+                T.type === "question" &&
+                (T.__questionSize = p.questionSize),
+                w.includes("questionFont") &&
+                  T.type === "question" &&
+                  (T.__questionFont = p.questionFont),
+                w.includes("answerSize") &&
+                  T.type === "answer" &&
+                  (T.__answerSize = p.answerSize),
+                w.includes("answerFont") &&
+                  T.type === "answer" &&
+                  (T.__answerFont = p.answerFont));
+            }),
+            h.edges.forEach((C) => {
+              if (!(zn.has(C.source.id) || zn.has(C.target.id))) return;
+              (w.includes("solidWidth") && (C.__solidWidth = p.solidWidth),
+                w.includes("solidColor") && (C.__solidColor = p.solidColor),
+                w.includes("dashedWidth") && (C.__dashedWidth = p.dashedWidth),
+                w.includes("dashedColor") && (C.__dashedColor = p.dashedColor),
+                w.includes("wavyWidth") && (C.__wavyWidth = p.wavyWidth),
+                w.includes("wavyColor") && (C.__wavyColor = p.wavyColor));
+            }),
+            En((C) => C + 1)));
+        return;
+      }
+      U((p) => {
+        let w = N(p);
+        return (Be(w), w);
+      });
+    }
+    function ir() {
+      (Cn([]), pn([]), En((N) => N + 1), Dn?.(!1));
+    }
+    function or(N) {
+      if (!Ln || !u.current) return;
+      (N.preventDefault(), N.stopPropagation());
+      let c = u.current.getBoundingClientRect(),
+        f = { x: N.clientX - c.left, y: N.clientY - c.top },
+        p = l.current ? Et(N, l.current) : [f.x, f.y];
+      ((Wn.current = {
+        drawing: !0,
+        points: [{ x: p[0], y: p[1] }],
+        screen: [f],
+      }),
+        pn([f]),
+        Cn([]),
+        N.currentTarget.setPointerCapture?.(N.pointerId));
+    }
+    function lr(N) {
+      if (!Ln || !Wn.current.drawing || !u.current) return;
+      (N.preventDefault(), N.stopPropagation());
+      let c = u.current.getBoundingClientRect(),
+        f = { x: N.clientX - c.left, y: N.clientY - c.top },
+        p = l.current ? Et(N, l.current) : [f.x, f.y],
+        w = Wn.current.screen[Wn.current.screen.length - 1];
+      if (w && Math.hypot(f.x - w.x, f.y - w.y) < 2) return;
+      (Wn.current.screen.push(f),
+        Wn.current.points.push({ x: p[0], y: p[1] }),
+        pn([...Wn.current.screen]));
+    }
+    function ur(N) {
+      if (!Ln || !Wn.current.drawing) return;
+      (N.preventDefault(), N.stopPropagation());
+      let c = Wn.current.points || [],
+        f = Wn.current.screen || [],
+        p = !1;
+      if (f.length >= 8) {
+        let w = f[0],
+          C = f[f.length - 1];
+        if (Math.hypot(C.x - w.x, C.y - w.y) <= 18) {
+          let T = c.slice(),
+            P = f.slice();
+          (T.push({ ...T[0] }),
+            P.push({ ...P[0] }),
+            Qn(T),
+            pn(P),
+            (p = !0),
+            Dn?.(!1));
+        }
+      }
+      ((Wn.current = { drawing: !1, points: [], screen: [] }),
+        p || (pn([]), Dn?.(!1)),
+        N.currentTarget.releasePointerCapture?.(N.pointerId));
+    }
     function v(N) {
       if (!u.current) return;
       let c = u.current.getBoundingClientRect(),
@@ -12417,14 +12550,17 @@ Error generating stack: ` +
     function _(N) {
       v(N);
     }
+    let ar = Sn.length > 0;
     return (
       (0, g.useEffect)(() => {
         if (!o.current || !l.current) return;
         let N = Ae(o.current),
           c = Ae(l.current),
           f = bs()
+            .filter(() => !ar)
             .scaleExtent([0.325, 2])
             .on("zoom", (p) => {
+              if (ar) return;
               (c.attr("transform", p.transform.toString()),
                 i(Number(p.transform.k.toFixed(2))));
             });
@@ -12435,7 +12571,7 @@ Error generating stack: ` +
             N.on(".zoom", null);
           }
         );
-      }, [i, r]),
+      }, [i, r, ar]),
       (0, g.useEffect)(() => {
         if (!l.current) return;
         let N = Ae(l.current);
@@ -12443,16 +12579,23 @@ Error generating stack: ` +
         let c = new Map(),
           f = [];
         function pz(P) {
+          let M = Math.max(0.4, Math.min(3, Number(P.__sizeScale) || 1));
           return P.type === "question"
             ? {
-                width: Math.round(B.questionSize * 1.28),
-                height: Math.max(40, Math.round(B.questionSize * 0.64)),
-                font: B.questionFont,
+                width: Math.round((P.__questionSize || B.questionSize) * 1.28 * M),
+                height: Math.max(
+                  40,
+                  Math.round((P.__questionSize || B.questionSize) * 0.64 * M),
+                ),
+                font: P.__questionFont || B.questionFont,
               }
             : {
-                width: Math.round(B.answerSize * 1.32),
-                height: Math.max(38, Math.round(B.answerSize * 0.62)),
-                font: B.answerFont,
+                width: Math.round((P.__answerSize || B.answerSize) * 1.32 * M),
+                height: Math.max(
+                  38,
+                  Math.round((P.__answerSize || B.answerSize) * 0.62 * M),
+                ),
+                font: P.__answerFont || B.answerFont,
               };
         }
         function yz(P, M) {
@@ -12470,28 +12613,28 @@ Error generating stack: ` +
           return P.style === "semantic-wavy"
             ? {
                 variant: "wavy",
-                stroke: B.wavyColor,
-                width: B.wavyWidth,
+                stroke: P.__wavyColor || B.wavyColor,
+                width: P.__wavyWidth || B.wavyWidth,
                 dasharray: "0",
               }
             : P.style === "dashed"
               ? {
                   variant: "line",
-                  stroke: B.dashedColor,
-                  width: B.dashedWidth,
+                  stroke: P.__dashedColor || B.dashedColor,
+                  width: P.__dashedWidth || B.dashedWidth,
                   dasharray: "8 6",
                 }
               : P.style === "dotted"
                 ? {
                     variant: "line",
-                    stroke: B.dashedColor,
-                    width: B.dashedWidth,
+                    stroke: P.__dashedColor || B.dashedColor,
+                    width: P.__dashedWidth || B.dashedWidth,
                     dasharray: "2 7",
                   }
                 : {
                     variant: "line",
-                    stroke: B.solidColor,
-                    width: B.solidWidth,
+                    stroke: P.__solidColor || B.solidColor,
+                    width: P.__solidWidth || B.solidWidth,
                     dasharray: "0",
                   };
         }
@@ -12546,17 +12689,36 @@ Error generating stack: ` +
           E.stopPropagation();
           I.setPointerCapture?.(E.pointerId);
           let G = Et(E, l.current),
-            W = P.position.x - G[0],
-            ze = P.position.y - G[1],
+            W = zn.has(P.id)
+              ? Sn.map((j) => h.nodeMap.get(j)).filter((j) => j?.position)
+              : [P],
+            ze = new Map(
+              W.map((j) => [j.id, { x: j.position.x, y: j.position.y }]),
+            ),
             se = 8,
             F = (j) => {
-              let q = Et(j, l.current);
-              (Math.abs(q[0] - G[0]) > se || Math.abs(q[1] - G[1]) > se) &&
-                (P.__dragging = !0);
-              ((P.position = { x: q[0] + W, y: q[1] + ze }),
-                C(P, M),
+              let q = Et(j, l.current),
+                ie = q[0] - G[0],
+                oe = q[1] - G[1];
+              (Math.abs(ie) > se || Math.abs(oe) > se) && (P.__dragging = !0);
+              W.forEach((re) => {
+                let le = ze.get(re.id);
+                if (!le) return;
+                (re.position = { x: le.x + ie, y: le.y + oe }, C(re, pz(re)));
+              }),
+                zn.has(P.id) &&
+                  Nn.current?.length &&
+                  pn((re) =>
+                    re.length
+                      ? re.map((le) => ({ x: le.x + ie * r, y: le.y + oe * r }))
+                      : re,
+                  ),
                 w(),
-                a(P));
+                a(P);
+              (G = q),
+                W.forEach((re) => {
+                  ze.set(re.id, { x: re.position.x, y: re.position.y });
+                });
             },
             V = (j) => {
               (I.releasePointerCapture?.(j.pointerId),
@@ -12564,10 +12726,16 @@ Error generating stack: ` +
                 I.removeEventListener("pointerup", V),
                 I.removeEventListener("pointercancel", V));
               window.setTimeout(() => {
-                P.__dragging = !1;
+                (P.__dragging = !1),
+                  W.forEach((q) => {
+                    q.__dragging = !1;
+                  });
               }, 0);
             };
-          P.__dragging = !1;
+          ((P.__dragging = !1),
+            W.forEach((j) => {
+              j.__dragging = !1;
+            }));
           (I.addEventListener("pointermove", F),
             I.addEventListener("pointerup", V),
             I.addEventListener("pointercancel", V));
@@ -12581,14 +12749,21 @@ Error generating stack: ` +
             W = P.position.y - I / 2,
             ze = M ? Ih : Mh[P.quality] || Mh.medium,
             F = t.get(P.id) || (M ? "\u63D0\u95EE" : "\u56DE\u7B54"),
-            V = M ? "#FFFFFF" : Oh[P.quality] || Oh.medium,
+            V = P.__customFill
+              ? "#FFFFFF"
+              : M
+                ? "#FFFFFF"
+                : Oh[P.quality] || Oh.medium,
+            jz = P.__customFill || ze,
+            Kz = zn.has(P.id),
             j = null,
             K = null,
             Ye = null;
           j = N.append("g")
             .attr("transform", `translate(${G} ${W})`)
-            .style("cursor", "pointer")
+            .style("cursor", Ln ? "crosshair" : "pointer")
             .style("touch-action", "none")
+            .style("pointer-events", Ln ? "none" : "all")
             .on("mouseenter", (j) => {
               (x(P, j),
                 Ye && (window.clearTimeout(Ye), (Ye = null)),
@@ -12601,9 +12776,10 @@ Error generating stack: ` +
                 (Ye = window.setTimeout(() => {
                   K && K.style("display", "none");
                 }, 500)));
-            })
-            .on("pointerdown", (j) => T(P, { width: E, height: I }, j))
-            .on("click", (j) => {
+            });
+          Ln || j.on("pointerdown", (j) => T(P, { width: E, height: I }, j));
+          j.on("click", (j) => {
+              if (Ln) return;
               if (P.__dragging) {
                 (j.preventDefault(), j.stopPropagation());
                 return;
@@ -12618,17 +12794,17 @@ Error generating stack: ` +
                 .attr("cy", I / 2)
                 .attr("rx", E / 2)
                 .attr("ry", I / 2)
-                .attr("fill", ze)
-                .attr("stroke", ze)
-                .attr("stroke-width", 1.5)
+                .attr("fill", jz)
+                .attr("stroke", Kz ? "#165DFF" : jz)
+                .attr("stroke-width", Kz ? 3 : 1.5)
             : j
                 .append("rect")
                 .attr("width", E)
                 .attr("height", I)
                 .attr("rx", Math.max(10, Math.round(I * 0.32)))
-                .attr("fill", ze)
-                .attr("stroke", ze)
-                .attr("stroke-width", 1.5);
+                .attr("fill", jz)
+                .attr("stroke", Kz ? "#165DFF" : jz)
+                .attr("stroke-width", Kz ? 3 : 1.5);
           j.append("foreignObject")
             .attr("width", E)
             .attr("height", I)
@@ -12679,7 +12855,7 @@ Error generating stack: ` +
               .attr("stroke", Ih)
               .attr("stroke-width", 2);
         });
-      }, [B, h, n, qn, t]),
+      }, [B, h, n, qn, t, Ln, zn, Mn]),
       g.default.createElement(
         "div",
         { ref: u, className: "canvas-panel" },
@@ -12689,101 +12865,117 @@ Error generating stack: ` +
               g.default.createElement(
                 "label",
                 null,
-                "提问节点",
+                "\u63D0\u95EE\u8282\u70B9",
                 g.default.createElement("input", {
                   type: "range",
                   min: "72",
                   max: "180",
                   step: "2",
-                  value: B.questionSize,
+                  value: Sn.length ? Ve.questionSize : B.questionSize,
                   onChange: (N) =>
-                    U((c) => ({ ...c, questionSize: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, questionSize: Number(N.target.value) })),
                 }),
-                g.default.createElement("span", null, B.questionSize),
+                g.default.createElement(
+                  "span",
+                  null,
+                  Sn.length ? Ve.questionSize : B.questionSize,
+                ),
               ),
               g.default.createElement(
                 "label",
                 null,
-                "提问字体",
+                "\u63D0\u95EE\u5B57\u4F53",
                 g.default.createElement("input", {
                   type: "range",
                   min: "10",
                   max: "28",
                   step: "1",
-                  value: B.questionFont,
+                  value: Sn.length ? Ve.questionFont : B.questionFont,
                   onChange: (N) =>
-                    U((c) => ({ ...c, questionFont: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, questionFont: Number(N.target.value) })),
                 }),
-                g.default.createElement("span", null, B.questionFont),
+                g.default.createElement(
+                  "span",
+                  null,
+                  Sn.length ? Ve.questionFont : B.questionFont,
+                ),
               ),
               g.default.createElement(
                 "label",
                 null,
-                "回答节点",
+                "\u56DE\u7B54\u8282\u70B9",
                 g.default.createElement("input", {
                   type: "range",
                   min: "64",
                   max: "180",
                   step: "2",
-                  value: B.answerSize,
+                  value: Sn.length ? Ve.answerSize : B.answerSize,
                   onChange: (N) =>
-                    U((c) => ({ ...c, answerSize: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, answerSize: Number(N.target.value) })),
                 }),
-                g.default.createElement("span", null, B.answerSize),
+                g.default.createElement(
+                  "span",
+                  null,
+                  Sn.length ? Ve.answerSize : B.answerSize,
+                ),
               ),
               g.default.createElement(
                 "label",
                 null,
-                "回答字体",
+                "\u56DE\u7B54\u5B57\u4F53",
                 g.default.createElement("input", {
                   type: "range",
                   min: "10",
                   max: "28",
                   step: "1",
-                  value: B.answerFont,
+                  value: Sn.length ? Ve.answerFont : B.answerFont,
                   onChange: (N) =>
-                    U((c) => ({ ...c, answerFont: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, answerFont: Number(N.target.value) })),
                 }),
-                g.default.createElement("span", null, B.answerFont),
+                g.default.createElement(
+                  "span",
+                  null,
+                  Sn.length ? Ve.answerFont : B.answerFont,
+                ),
               ),
               g.default.createElement(
                 "label",
                 null,
-                "实线",
+                "\u5B9E\u7EBF",
                 g.default.createElement("input", {
                   type: "range",
                   min: "1",
                   max: "8",
                   step: "0.5",
-                  value: B.solidWidth,
+                  value: Sn.length ? Ve.solidWidth : B.solidWidth,
                   onChange: (N) =>
-                    U((c) => ({ ...c, solidWidth: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, solidWidth: Number(N.target.value) })),
                 }),
                 g.default.createElement("input", {
                   type: "color",
-                  value: B.solidColor,
+                  value: Sn.length ? Ve.solidColor : B.solidColor,
                   onChange: (N) =>
-                    U((c) => ({ ...c, solidColor: N.target.value })),
+                    Hr((c) => ({ ...c, solidColor: N.target.value })),
                 }),
               ),
               g.default.createElement(
                 "label",
                 null,
-                "虚线",
+                "\u865A\u7EBF",
                 g.default.createElement("input", {
                   type: "range",
                   min: "1",
                   max: "8",
                   step: "0.5",
-                  value: B.dashedWidth,
+                  value: Sn.length ? Ve.dashedWidth : B.dashedWidth,
                   onChange: (N) =>
-                    U((c) => ({ ...c, dashedWidth: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, dashedWidth: Number(N.target.value) })),
                 }),
                 g.default.createElement("input", {
                   type: "color",
-                  value: B.dashedColor,
+                  value: Sn.length ? Ve.dashedColor : B.dashedColor,
                   onChange: (N) =>
-                    U((c) => ({ ...c, dashedColor: N.target.value })),
+                    Hr((c) => ({ ...c, dashedColor: N.target.value })),
                 }),
               ),
               g.default.createElement(
@@ -12795,17 +12987,47 @@ Error generating stack: ` +
                   min: "1",
                   max: "8",
                   step: "0.5",
-                  value: B.wavyWidth,
+                  value: Sn.length ? Ve.wavyWidth : B.wavyWidth,
                   onChange: (N) =>
-                    U((c) => ({ ...c, wavyWidth: Number(N.target.value) })),
+                    Hr((c) => ({ ...c, wavyWidth: Number(N.target.value) })),
                 }),
                 g.default.createElement("input", {
                   type: "color",
-                  value: B.wavyColor,
+                  value: Sn.length ? Ve.wavyColor : B.wavyColor,
                   onChange: (N) =>
-                    U((c) => ({ ...c, wavyColor: N.target.value })),
+                    Hr((c) => ({ ...c, wavyColor: N.target.value })),
                 }),
               ),
+              g.default.createElement(
+                "button",
+                {
+                  type: "button",
+                  className: Ln ? "active" : "",
+                  onClick: () => Dn?.((N) => !N),
+                },
+                Ln ? "\u9000\u51FA\u5708\u7D22" : "\u5708\u7D22",
+              ),
+              Sn.length
+                ? g.default.createElement(
+                    "div",
+                    { className: "lasso-batch-panel inline" },
+                    g.default.createElement(
+                      "div",
+                      { className: "lasso-batch-head" },
+                      g.default.createElement(
+                        "strong",
+                        null,
+                        `\u5DF2\u5708\u9009 ${Sn.length} \u4E2A\u8282\u70B9`,
+                      ),
+                      g.default.createElement(
+                        "button",
+                        { type: "button", onClick: ir },
+                        "\u6E05\u9664",
+                      ),
+                    ),
+                  )
+                : null,
+      
             ),
         h.nodes.length
           ? null
@@ -12839,6 +13061,26 @@ Error generating stack: ` +
             },
           ),
         ),
+        g.default.createElement(
+          "div",
+          {
+            className: `lasso-overlay${Ln ? " active" : ""}`,
+            onPointerDown: or,
+            onPointerMove: lr,
+            onPointerUp: ur,
+            onPointerCancel: ur,
+          },
+          g.default.createElement(
+            "svg",
+            { className: "lasso-overlay-svg" },
+            kn.length
+              ? g.default.createElement("polyline", {
+                  className: "lasso-polyline",
+                  points: kn.map((N) => `${N.x},${N.y}`).join(" "),
+                })
+              : null,
+          ),
+        ),
         s
           ? g.default.createElement(
               "div",
@@ -12851,11 +13093,6 @@ Error generating stack: ` +
                 null,
                 t.get(s.id) ||
                   (s.type === "question" ? "\u63D0\u95EE" : "\u56DE\u7B54"),
-              ),
-              g.default.createElement(
-                "span",
-                { className: "node-preview-time" },
-                ia(s.createdAt),
               ),
               g.default.createElement(
                 "div",
@@ -12899,6 +13136,7 @@ Error generating stack: ` +
       [s, a] = (0, g.useState)(null),
       [d, m] = (0, g.useState)(!1),
       [h, v] = (0, g.useState)(!1),
+      [y, b] = (0, g.useState)(!1),
       x = (0, g.useMemo)(() => kg(e), [e]);
     (0, g.useEffect)(() => {
       let E = !0;
@@ -12989,7 +13227,7 @@ Error generating stack: ` +
           L,
         );
       if (G === null) return;
-      let W = G.split(/[，,]/)
+      let W = G.split(/[锛?]/)
           .map((y) => y.trim())
           .filter(Boolean),
         ze = await Ct("NODE_SET_TAGS", { nodeId: E.id, tags: W });
@@ -13203,6 +13441,8 @@ ${s.content}`;
           nodeLabels: x,
           onSelectNode: a,
           onLocateNode: Jt,
+          lassoMode: y,
+          setLassoMode: b,
           zoom: i,
           setZoom: o,
         }),
@@ -13505,3 +13745,4 @@ react-dom/cjs/react-dom.production.min.js:
    * LICENSE file in the root directory of this source tree.
    *)
 */
+
