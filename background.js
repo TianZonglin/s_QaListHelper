@@ -10,22 +10,35 @@
   var st = "ai_related_context",
     ot = "semantic-ai-dashed-arc",
     rt = "#DC2626";
-  const AI_LAYER_CACHE_VERSION = 2;
+  const Q_RELATION_TYPE = "q_related_context",
+    Q_ARC_STYLE = "semantic-q-dashed-arc",
+    Q_ARC_COLOR = "#2563EB";
+  const AI_LAYER_CACHE_VERSION = 3;
   const AI_RELATION_MODEL = "gpt-5.3-codex",
     AI_RELATION_BASE_URL = "https://relay.nf.video/v1",
     AI_RELATION_API_KEY =
       "sk-ant-sid01--3357e5f859e0e9dde27f5228b7eae85d80c9b5875e555ac13acf95a3f54cb254";
   const AI_RELATION_SYSTEM_PROMPT = [
-    "你是补充提问识别器。任务：判断每个当前提问相对于其全部前序节点是否为“补充提问”。",
+    "你是补充提问识别器。任务：判断每个当前提问相对于其全部前序回答节点是否为“补充提问”。输入采用紧凑结构（节点数组+索引引用）。",
+    "输入字段：questionNodes(提问节点数组)、answerNodes(回答节点数组)、questionAnswerPairs(关系索引数组，nodeIndex->previousAnswerIndexes)。不要把 content 在关系里重复展开。",
     '输出要求：只输出 JSON 对象，不要输出任何额外文本。格式：{"supplementResults":[...]}',
-    'supplementResults 的元素结构：{"questionId":"当前提问ID","decisions":[{"nodeId":"历史节点ID","nodeType":"question|answer","isSupplement":true|false,"score":0-1,"reason":"不超过20字"}]}',
-    "必须输出全部前序节点的判定，不允许遗漏节点。",
+    'supplementResults 的元素结构：{"questionId":"当前提问ID","decisions":[{"nodeId":"历史回答节点ID","nodeType":"answer","isSupplement":true|false,"score":0-1,"reason":"不超过20字"}]}',
+    "必须输出全部前序回答节点的判定，不允许遗漏节点。",
     "不要在模型侧做阈值裁剪，只给出 isSupplement 与 score。",
     "判定原则：",
-    "1) 主题、实体、约束、目标、时间条件有明显承接或引用，判为相关；",
-    "2) 同义改写、补充条件、追问细节、纠错回指，判为相关；",
-    "3) 仅词面偶然重合、主题跳转、泛泛寒暄，不相关。",
+    "1) 当前提问延续、追问、细化、纠错或引用了前置回答中的主题/实体/约束，判为相关；",
+    "2) 仅词面偶然重合、主题跳转、泛泛寒暄，不相关；",
     "4) score 建议阈值：>=0.55 才输出到 related。",
+  ].join("\n");
+  const AI_QSCORE_SYSTEM_PROMPT = [
+    "你是补充问答识别器。任务：分别判断提问链、回答链中的“当前节点”是否为其前序同类型节点的补充。",
+    "输入是 compact_qa 结构：questionNodes/questionPairs 与 answerNodes/answerPairs。",
+    "必须只在同类型内部比较：question 只对 question，answer 只对 answer。",
+    "输出要求：只输出 JSON 对象，不要输出额外文本。",
+    '格式：{"relations":[{"questionId":"当前节点ID","nodeType":"question|answer","decisions":[{"nodeId":"前序节点ID","nodeType":"question|answer","isSupplement":true|false,"score":0-1,"reason":"不超过20字"}],"relatedNodeIds":["命中节点ID..."]}]}',
+    "必须覆盖所有当前节点，不允许遗漏。",
+    "不要做阈值裁剪，完整返回每个当前节点对其前序节点的判定结果。",
+    "判定原则：主题承接、约束延续、细化追问/追答、纠错回指为相关；主题跳转或偶然词重合为不相关。",
   ].join("\n");
   function A(e, r = 96) {
     let n = String(e || "")
@@ -352,6 +365,23 @@
       n
     );
   }
+  function cn(e, r) {
+    let n = { questionId: e.id, decisions: [] };
+    return (
+      r.previousAnswers.forEach((t) => {
+        let o = Ct(e.content, t.content, 0.5);
+        n.decisions.push({
+          nodeId: t.id,
+          nodeType: "answer",
+          isSupplement: o.related,
+          score: o.score,
+          reason: o.bridge ? "引用上文答复" : "延续已答主题",
+        });
+      }),
+      n.decisions.sort((t, o) => o.score - t.score),
+      n
+    );
+  }
   function Gt(e, r, n = 0.6, t = 1) {
     if (!Number.isFinite(e)) return n;
     if (!Number.isFinite(r) || !Number.isFinite(t) || r === t) return 1;
@@ -433,6 +463,407 @@
           : [],
       }))
       .filter((r) => r.questionId);
+  }
+  function Jt(e) {
+    let r = String(e || "").trim();
+    if (!r) return [];
+    let n = r.match(/\d+(?:\.\d+)?/g) || [],
+      t = r.match(
+        /(今天|明天|后天|本周|下周|本月|下月|今年|明年|\d{4}年|\d+月|\d+日|\d+天|\d+小时|\d+分钟)/g,
+      ) || [];
+    return [...n, ...t];
+  }
+  function tn(e) {
+    let r = tt(e).replace(/\s+/g, ""),
+      n = [];
+    if (r.length < 2) return n;
+    let t = Math.min(r.length - 1, 140);
+    for (let o = 0; o < t; o += 1) n.push(r.slice(o, o + 2));
+    return n;
+  }
+  function en(e, r) {
+    let n = new Set(Array.isArray(e) ? e : []),
+      t = new Set(Array.isArray(r) ? r : []);
+    if (!n.size || !t.size) return 0;
+    let o = 0;
+    for (let s of n) t.has(s) && (o += 1);
+    return o / new Set([...n, ...t]).size;
+  }
+  function rn(e) {
+    return /(\b(这|那|它|他|她|其|上述|上文|前面|刚才|继续|再|另外|还有|补充)\b|这个|那个|上述|上文|前面|刚才|继续|再问|补充)/i.test(
+      String(e || ""),
+    );
+  }
+  function nn(e, r, n) {
+    let t = Y(e, r),
+      o = wt(e, r),
+      s = ut(e, r),
+      i = en(tn(e), tn(r)),
+      a = rn(e),
+      c = Jt(e),
+      d = Jt(r),
+      l = c.length && d.length ? en(c, d) : 0,
+      y = Math.max(t, o * 0.84 + (s ? 0.24 : 0), i * 0.92);
+    a && (s || o >= 0.08 || i >= 0.08) && (y += 0.1);
+    l >= 0.2 && (y += 0.1);
+    y < 0.1 && !s && (y -= 0.03);
+    let E = Math.round(O(y) * 100) / 100,
+      I = E >= n,
+      f =
+        E >= 0.75
+          ? s || a
+            ? "语义回指承接"
+            : l >= 0.25
+              ? "条件目标延续"
+              : "同主题细化追问"
+          : E >= n
+            ? s
+              ? "可能引用上文"
+              : "主题部分重合"
+            : E < 0.25
+              ? "主题跳转不相关"
+              : "弱相关或词面重合";
+    return { isSupplement: I, score: E, reason: f.slice(0, 20) };
+  }
+  async function local_fakeAI(e) {
+    let nThreshold = Number(e?.scoring?.minScore),
+      tThreshold =
+        Number.isFinite(nThreshold) && nThreshold > 0 && nThreshold < 1
+          ? nThreshold
+          : 0.55;
+    let r = [];
+    let o = Array.isArray(e?.questionNodes) ? e.questionNodes : [];
+    let s = Array.isArray(e?.answerNodes) ? e.answerNodes : [];
+    let i = Array.isArray(e?.questionAnswerPairs) ? e.questionAnswerPairs : [];
+    let a =
+      o.length > 0 &&
+      i.length > 0 &&
+      o.every((t) => typeof t?.content === "string") &&
+      i.every((t) => Number.isFinite(Number(t?.nodeIndex)));
+    if (a) {
+      let t = o.map((l) => ({
+          id: String(l?.id || "").trim(),
+          content: String(l?.content || ""),
+        })),
+        c = s.map((l) => ({
+          id: String(l?.id || "").trim(),
+          content: String(l?.content || ""),
+        })),
+        d = new Map();
+      t.forEach((l) => {
+        l?.id && d.set(l.id, { questionId: l.id, decisions: [] });
+      });
+      i.forEach((l) => {
+        let y = Number(l?.nodeIndex);
+        if (!Number.isFinite(y)) return;
+        let E = t[y];
+        if (!E?.id) return;
+        let I = Array.isArray(l?.previousAnswerIndexes)
+          ? l.previousAnswerIndexes
+          : [];
+        let f = d.get(E.id) || { questionId: E.id, decisions: [] };
+        I.forEach((p) => {
+          let q = Number(p);
+          if (!Number.isFinite(q)) return;
+          let h = c[q];
+          if (!h?.id) return;
+          let v = nn(E.content, h.content, tThreshold);
+          f.decisions.push({
+            nodeId: h.id,
+            nodeType: "answer",
+            isSupplement: v.isSupplement,
+            score: v.score,
+            reason: v.reason,
+          });
+        });
+        d.set(E.id, f);
+      });
+      r = Array.from(d.values()).map((l) => ({
+        questionId: l.questionId,
+        decisions: l.decisions
+          .filter((y) => y.nodeId)
+          .sort((y, E) => E.score - y.score || y.nodeId.localeCompare(E.nodeId)),
+      }));
+    } else {
+      let t = Array.isArray(e?.questions) ? e.questions : [];
+      r = t.map((l) => {
+        let y = l?.question || {},
+          E = String(y?.id || "").trim(),
+          I = String(y?.content || ""),
+          f = Array.isArray(l?.previousQuestions) ? l.previousQuestions : [],
+          p = Array.isArray(l?.previousAnswers) ? l.previousAnswers : [],
+          q = [];
+        f.forEach((h) => {
+          let v = nn(I, String(h?.content || ""), tThreshold);
+          q.push({
+            nodeId: String(h?.id || "").trim(),
+            nodeType: "question",
+            isSupplement: v.isSupplement,
+            score: v.score,
+            reason: v.reason,
+          });
+        });
+        p.forEach((h) => {
+          let v = nn(I, String(h?.content || ""), tThreshold);
+          q.push({
+            nodeId: String(h?.id || "").trim(),
+            nodeType: "answer",
+            isSupplement: v.isSupplement,
+            score: v.score,
+            reason: v.reason,
+          });
+        });
+        return {
+          questionId: E,
+          decisions: q
+            .filter((h) => h.nodeId)
+            .sort((h, v) => v.score - h.score || h.nodeId.localeCompare(v.nodeId)),
+        };
+      });
+    }
+    return {
+      relations: r,
+      responseText: JSON.stringify({ supplementResults: r }),
+    };
+  }
+  async function local_qScore(e) {
+    let nThreshold = Number(e?.scoring?.minScore),
+      tThreshold =
+        Number.isFinite(nThreshold) && nThreshold > 0 && nThreshold < 1
+          ? nThreshold
+          : 0.55,
+      r = [],
+      o = "legacy";
+    let s = (u, k, H) => {
+      let pe = (Array.isArray(u) ? u : []).map((ie) => ({
+          id: String(ie?.id || "").trim(),
+          content: String(ie?.content || ""),
+        })),
+        me = Array.isArray(k) ? k : [];
+      return me.map((ie) => {
+        let ye = Number(ie?.nodeIndex),
+          xe = Number.isFinite(ye) ? pe[ye] : null;
+        if (!xe?.id) return null;
+        let Te = Array.isArray(ie?.previousIndexes) ? ie.previousIndexes : [],
+          Ne = [];
+        Te.forEach((Re) => {
+          let Ee = Number(Re);
+          if (!Number.isFinite(Ee)) return;
+          let le = pe[Ee];
+          if (!le?.id) return;
+          let Ae = nn(xe.content, le.content, tThreshold);
+          Ae.isSupplement &&
+            Ne.push({
+              nodeId: le.id,
+              nodeType: H,
+              isSupplement: !0,
+              score: Ae.score,
+              reason: Ae.reason,
+            });
+        });
+        let Le = Ne
+          .filter((Re) => Re.nodeId)
+          .sort((Re, Ee) => Ee.score - Re.score || Re.nodeId.localeCompare(Ee.nodeId));
+        return {
+          questionId: xe.id,
+          nodeType: H,
+          decisions: Le,
+          relatedNodeIds: Le.map((Re) => Re.nodeId),
+        };
+      });
+    };
+    let i = Array.isArray(e?.questionNodes) ? e.questionNodes : [],
+      a = Array.isArray(e?.questionPairs) ? e.questionPairs : [],
+      c = Array.isArray(e?.answerNodes) ? e.answerNodes : [],
+      d = Array.isArray(e?.answerPairs) ? e.answerPairs : [],
+      l =
+        (i.length > 0 && a.length > 0) ||
+        (c.length > 0 && d.length > 0);
+    if (l) {
+      o = "compact_qa";
+      (r = [...s(i, a, "question"), ...s(c, d, "answer")].filter(
+        (k) => k?.questionId,
+      ));
+    } else {
+      let u = Array.isArray(e?.questions) ? e.questions : [];
+      r = u
+        .map((k) => {
+          let H = k?.question || {},
+            pe = String(H?.id || "").trim(),
+            me = String(H?.content || ""),
+            ie = Array.isArray(k?.previousQuestions) ? k.previousQuestions : [],
+            ye = [];
+          ie.forEach((xe) => {
+            let Te = nn(me, String(xe?.content || ""), tThreshold);
+            Te.isSupplement &&
+              ye.push({
+                nodeId: String(xe?.id || "").trim(),
+                nodeType: "question",
+                isSupplement: !0,
+                score: Te.score,
+                reason: Te.reason,
+              });
+          });
+          let xe = ye
+            .filter((Te) => Te.nodeId)
+            .sort((Te, Ne) => Ne.score - Te.score || Te.nodeId.localeCompare(Ne.nodeId));
+          return {
+            questionId: pe,
+            nodeType: "question",
+            decisions: xe,
+            relatedNodeIds: xe.map((Te) => Te.nodeId),
+          };
+        })
+        .filter((k) => k?.questionId);
+    }
+    return {
+      relations: r,
+      responseText: JSON.stringify({
+        type: "local_qScore",
+        inputMode: o,
+        relationCount: r.length,
+        relations: r,
+      }),
+    };
+  }
+  function an(e) {
+    if (!Array.isArray(e)) return [];
+    return e
+      .map((r) => {
+        let n = String(r?.questionId || "").trim(),
+          t = r?.nodeType === "answer" ? "answer" : "question",
+          o = Array.isArray(r?.decisions || r?.related)
+            ? (r.decisions || r.related)
+                .map((s) => ({
+                  nodeId: String(s?.nodeId || "").trim(),
+                  nodeType: s?.nodeType === "answer" ? "answer" : "question",
+                  isSupplement: Boolean(s?.isSupplement),
+                  score: Math.max(0, Math.min(1, Number(s?.score || 0))),
+                  reason: String(s?.reason || "").trim().slice(0, 64),
+                }))
+                .filter((s) => s.nodeId)
+            : [];
+        let s = Array.isArray(r?.relatedNodeIds)
+          ? r.relatedNodeIds.map((i) => String(i || "").trim()).filter(Boolean)
+          : o.filter((i) => i.isSupplement).map((i) => i.nodeId);
+        return {
+          questionId: n,
+          nodeType: t,
+          decisions: o,
+          relatedNodeIds: Array.from(new Set(s)),
+        };
+      })
+      .filter((r) => r.questionId);
+  }
+  async function ai_qScore(e) {
+    if (!AI_RELATION_API_KEY) {
+      return {
+        relations: null,
+        responseText: "[AI调用未执行] 缺少 API Key。",
+      };
+    }
+    let r = `${AI_RELATION_BASE_URL.replace(/\/$/, "")}/responses`,
+      n = {
+        model: AI_RELATION_MODEL,
+        input: [
+          {
+            role: "system",
+            content: [{ type: "input_text", text: AI_QSCORE_SYSTEM_PROMPT }],
+          },
+          {
+            role: "user",
+            content: [{ type: "input_text", text: JSON.stringify(e) }],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "qa_supplement_map",
+            strict: !0,
+            schema: {
+              type: "object",
+              properties: {
+                relations: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      questionId: { type: "string" },
+                      nodeType: {
+                        type: "string",
+                        enum: ["question", "answer"],
+                      },
+                      decisions: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            nodeId: { type: "string" },
+                            nodeType: {
+                              type: "string",
+                              enum: ["question", "answer"],
+                            },
+                            isSupplement: { type: "boolean" },
+                            score: { type: "number" },
+                            reason: { type: "string" },
+                          },
+                          required: [
+                            "nodeId",
+                            "nodeType",
+                            "isSupplement",
+                            "score",
+                            "reason",
+                          ],
+                          additionalProperties: !1,
+                        },
+                      },
+                      relatedNodeIds: {
+                        type: "array",
+                        items: { type: "string" },
+                      },
+                    },
+                    required: ["questionId", "nodeType", "decisions", "relatedNodeIds"],
+                    additionalProperties: !1,
+                  },
+                },
+              },
+              required: ["relations"],
+              additionalProperties: !1,
+            },
+          },
+        },
+      };
+    try {
+      let t = await fetch(r, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${AI_RELATION_API_KEY}`,
+        },
+        body: JSON.stringify(n),
+      });
+      if (!t.ok) {
+        let o = await t.text();
+        return {
+          relations: null,
+          responseText: `[AI调用失败] HTTP ${t.status} ${o || ""}`.trim(),
+        };
+      }
+      let o = await t.json(),
+        s = Mt(o),
+        i = String(s || "").trim(),
+        a = i ? JSON.parse(i) : null,
+        c = an(a?.relations);
+      return {
+        relations: c.length ? c : null,
+        responseText: i || JSON.stringify(o),
+      };
+    } catch (t) {
+      return {
+        relations: null,
+        responseText: `[AI调用异常] ${t?.message || String(t)}`,
+      };
+    }
   }
   async function Ft(e) {
     if (!AI_RELATION_API_KEY) {
@@ -539,6 +970,8 @@
   async function Pt(e, opts = {}) {
     (e.edges = e.edges.filter((o) => o.relationType !== st));
     let allowAi = opts.allowAi !== !1;
+    let aiMode = opts.aiMode === "remote" ? "remote" : "local";
+    let aiInputScope = "q2a_only";
     let forceAi = opts.forceAi === !0;
     let selectedOnly = opts.selectedOnly === !0;
     let selectedSet = new Set(
@@ -554,6 +987,8 @@
       cached &&
       cached.cacheVersion === AI_LAYER_CACHE_VERSION &&
       cached.cacheKey === cacheKey &&
+      cached.aiMode === aiMode &&
+      cached.aiInputScope === aiInputScope &&
       Array.isArray(cached.relations)
     ) {
       let nodeMap = new Map(e.nodes.map((o) => [o.id, o]));
@@ -564,10 +999,10 @@
           : [];
         i.forEach((a) => {
           let c = Number(a?.score || 0);
-          c > 0.6 && scores.push(c);
+          c >= 0.5 && scores.push(c);
         });
       });
-      let min = scores.length ? Math.min(...scores) : 0.6,
+      let min = scores.length ? Math.min(...scores) : 0.5,
         max = scores.length ? Math.max(...scores) : 1;
       cached.relations.forEach((o) => {
         let t = String(o?.questionId || "").trim(),
@@ -588,7 +1023,7 @@
         }),
           i.forEach((a) => {
             let score = Number(a?.score || 0);
-            if (!(score > 0.6)) return;
+            if (!(score >= 0.5)) return;
             let c = nodeMap.get(String(a?.nodeId || "").trim());
             if (!c) return;
             let d = P(c.id, s.id, st, ot, `ai-${s.id}-${c.id}`);
@@ -597,6 +1032,7 @@
               (d.__solidColor = `rgba(220,38,38,${alpha.toFixed(3)})`),
               (d.__dashedWidth = 2),
               (d.aiScore = score),
+              (d.aiReason = String(a?.reason || "")),
               (d.aiKind = a?.nodeType === "answer" ? "q2a" : "q2q"),
               N(e, d));
           }));
@@ -618,12 +1054,13 @@
       let a = t.get(i.id) || { previousQuestions: [], previousAnswers: [] },
         p = a.previousQuestions,
         q = a.previousAnswers,
+        h = [],
         c = {
           question: Nt(i, idToShort),
-          previousQuestions: Qt(p, idToShort),
+          previousQuestions: Qt(h, idToShort),
           previousAnswers: Qt(q, idToShort),
         },
-        d = Bt(i, { previousQuestions: p, previousAnswers: q });
+        d = cn(i, { previousAnswers: q });
       (s.push({
         questionId: idToShort.get(String(i.id)) || i.id,
         question: c.question,
@@ -633,16 +1070,57 @@
       }),
         o.push(d));
     }
-    let iPayload = {
-        task: "q_relation_batch",
-        scoring: {
-          minScore: 0.55,
-          note: "在 localRelated 基础上二次判断，可增删本地候选",
-        },
-        questions: s,
-      },
+    let compactAnswerNodeMap = new Map(),
+      compactAnswerNodes = [],
+      compactQuestionNodes = [],
+      compactQuestionAnswerPairs = [],
+      iPayload =
+        (() => {
+          s.forEach((E, I) => {
+            let qId = String(E?.question?.id || "").trim();
+            if (!qId) return;
+            compactQuestionNodes.push({
+              id: qId,
+              type: "question",
+              content: String(E?.question?.content || ""),
+            });
+            let answerIndexes = [];
+            (Array.isArray(E?.previousAnswers) ? E.previousAnswers : []).forEach(
+              (f) => {
+                let aId = String(f?.id || "").trim();
+                if (!aId) return;
+                if (!compactAnswerNodeMap.has(aId)) {
+                  compactAnswerNodeMap.set(aId, compactAnswerNodes.length);
+                  compactAnswerNodes.push({
+                    id: aId,
+                    type: "answer",
+                    content: String(f?.content || ""),
+                  });
+                }
+                answerIndexes.push(compactAnswerNodeMap.get(aId));
+              },
+            );
+            compactQuestionAnswerPairs.push({
+              nodeIndex: I,
+              previousAnswerIndexes: answerIndexes,
+            });
+          });
+          return {
+            task: "q_relation_batch_compact_answer_only",
+            scoring: {
+              minScore: 0.5,
+              note: "仅判断当前提问是否为前序回答的补充提问",
+            },
+            inputMode: "compact_q2a",
+            questionNodes: compactQuestionNodes,
+            answerNodes: compactAnswerNodes,
+            questionAnswerPairs: compactQuestionAnswerPairs,
+          };
+        })(),
       iResult = allowAi
-        ? await Ft(iPayload)
+        ? aiMode === "remote"
+          ? await Ft(iPayload)
+          : await local_fakeAI(iPayload)
         : {
             relations: null,
             responseText: "[AI未调用] 当前流程仅复用历史变量。",
@@ -666,18 +1144,19 @@
         : [];
       I.forEach((f) => {
         let p = Number(f?.score || 0);
-        p > 0.6 && scorePool.push(p);
+        p >= 0.5 && scorePool.push(p);
       });
     });
-    let minScore = scorePool.length ? Math.min(...scorePool) : 0.6,
+    let minScore = scorePool.length ? Math.min(...scorePool) : 0.5,
       maxScore = scorePool.length ? Math.max(...scorePool) : 1;
     a.forEach((y, questionId) => {
       let c = n.get(questionId);
       if (!c) return;
       let d = t.get(c.id) || { previousQuestions: [], previousAnswers: [] },
+        lq = [],
         l = {
           questionId: c.id,
-          previousQuestions: d.previousQuestions.map((E) => E.id),
+          previousQuestions: lq.map((E) => E.id),
           previousAnswers: d.previousAnswers.map((E) => E.id),
         };
       ((c.aiRelationContext = {
@@ -686,7 +1165,7 @@
           system: AI_RELATION_SYSTEM_PROMPT,
           input: {
             question: Nt(c, idToShort),
-            previousQuestions: Qt(d.previousQuestions, idToShort),
+            previousQuestions: Qt(lq, idToShort),
             previousAnswers: Qt(d.previousAnswers, idToShort),
           },
         },
@@ -697,7 +1176,7 @@
           : []
         ).forEach((E) => {
           let score = Number(E?.score || 0);
-          if (!(score > 0.6)) return;
+          if (!(score >= 0.5)) return;
           let I = n.get(E.nodeId);
           if (!I) return;
           let f = P(I.id, c.id, st, ot, `ai-${c.id}-${E.nodeId}`);
@@ -706,14 +1185,17 @@
             (f.__solidColor = `rgba(220,38,38,${alpha.toFixed(3)})`),
             (f.__dashedWidth = 2),
             (f.aiScore = score),
+            (f.aiReason = String(E?.reason || "")),
             (f.aiKind = E?.nodeType === "answer" ? "q2a" : "q2q"),
             N(e, f));
         }));
     });
     e.aiQualityLayer = {
       systemPrompt: AI_RELATION_SYSTEM_PROMPT,
-      provider: "relay.nf.video",
-      model: AI_RELATION_MODEL,
+      provider: allowAi ? (aiMode === "remote" ? "relay.nf.video" : "local_fakeAI") : "disabled",
+      model: allowAi ? (aiMode === "remote" ? AI_RELATION_MODEL : "prompt-rule-v1") : "disabled",
+      aiMode,
+      aiInputScope,
       relations: Array.from(a.values()),
       requestText: JSON.stringify(iPayload),
       responseText:
@@ -724,6 +1206,158 @@
       cacheVersion: AI_LAYER_CACHE_VERSION,
       generatedAt: new Date().toISOString(),
     };
+    e.lastDebugSource = "ai";
+  }
+  async function localQRelationLayer(e, opts = {}) {
+    if (opts.runQ !== !0) return;
+    let qMode = opts.qMode === "remote" ? "remote" : "local";
+    let selectedOnly = opts.selectedOnly === !0;
+    let selectedSet = new Set(
+      (Array.isArray(opts.selectedNodeIds) ? opts.selectedNodeIds : [])
+        .map((o) => String(o || "").trim())
+        .filter(Boolean),
+    );
+    let hasSelectedFilter = selectedSet.size > 0;
+    (e.edges = e.edges.filter((o) => o.relationType !== Q_RELATION_TYPE));
+    let { idToShort, shortToId } = Xt(e.nodes),
+      rAll = e.nodes
+        .filter((o) => o.type === "question")
+        .sort((o, s) => bt(o) - bt(s) || String(o.id).localeCompare(String(s.id))),
+      r = rAll.filter(
+        (o) =>
+          o.visible !== !1 &&
+          (!hasSelectedFilter || selectedSet.has(String(o.id))),
+      ),
+      n = new Map(e.nodes.map((o) => [o.id, o])),
+      t = new Map(),
+      o = [];
+    rAll.forEach((s, i) => {
+      t.set(s.id, { previousQuestions: rAll.slice(0, i) });
+    });
+    for (let s of r) {
+      let i = t.get(s.id) || { previousQuestions: [] },
+        a = i.previousQuestions;
+      o.push({
+        questionId: idToShort.get(String(s.id)) || s.id,
+        question: Nt(s, idToShort),
+        previousQuestions: Qt(a, idToShort),
+      });
+    }
+    let s = r.map((i) => ({
+        id: idToShort.get(String(i.id)) || String(i.id),
+        type: "question",
+        content: String(i.content || ""),
+      })),
+      iAll = e.nodes
+        .filter((a) => a.type === "answer")
+        .sort((a, c) => bt(a) - bt(c) || String(a.id).localeCompare(String(c.id))),
+      i = iAll.filter(
+        (a) =>
+          a.visible !== !1 &&
+          (!hasSelectedFilter || selectedSet.has(String(a.id))),
+      ),
+      a = i.map((c) => ({
+        id: idToShort.get(String(c.id)) || String(c.id),
+        type: "answer",
+        content: String(c.content || ""),
+      })),
+      qIndexById = new Map(s.map((d, l) => [d.id, l])),
+      aIndexById = new Map(a.map((d, l) => [d.id, l])),
+      c = r.map((d) => {
+        let prev = (t.get(d.id)?.previousQuestions || [])
+          .map((l) => qIndexById.get(idToShort.get(String(l.id)) || String(l.id)))
+          .filter((l) => Number.isFinite(l));
+        return {
+          nodeIndex: qIndexById.get(idToShort.get(String(d.id)) || String(d.id)),
+          previousIndexes: prev,
+        };
+      }),
+      d = i.map((l) => {
+        let idx = iAll.findIndex((y) => String(y.id) === String(l.id)),
+          prevAll = idx > 0 ? iAll.slice(0, idx) : [],
+          prev = prevAll
+            .map((y) =>
+              aIndexById.get(idToShort.get(String(y.id)) || String(y.id)),
+            )
+            .filter((y) => Number.isFinite(y));
+        return {
+          nodeIndex: aIndexById.get(idToShort.get(String(l.id)) || String(l.id)),
+          previousIndexes: prev,
+        };
+      }),
+      l = {
+        task: "qa_supplement_batch",
+        scoring: {
+          minScore: 0.5,
+          note: "分别在前序提问、前序回答内判断补充关系",
+        },
+        questionNodes: s,
+        questionPairs: c,
+        answerNodes: a,
+        answerPairs: d,
+      },
+      y = qMode === "remote" ? await ai_qScore(l) : await local_qScore(l),
+      E = Zt(y?.relations || null, shortToId),
+      I = new Map((E || []).map((f) => [f.questionId, f])),
+      f = [];
+    I.forEach((p) => {
+      let q = Array.isArray(p?.decisions || p?.related)
+        ? p.decisions || p.related
+        : [];
+      q.forEach((h) => {
+        let v = Number(h?.score || 0);
+        v >= 0.5 && f.push(v);
+      });
+    });
+    let minQaScore = f.length ? Math.min(...f) : 0.5,
+      maxQaScore = f.length ? Math.max(...f) : 1;
+    I.forEach((p, questionId) => {
+      let q = n.get(questionId);
+      if (!q) return;
+      let h = t.get(q.id) || { previousQuestions: [] };
+      ((q.qRelationContext = {
+        questionId: q.id,
+        previousQuestions: h.previousQuestions.map((v) => v.id),
+        input: {
+          questionNodes: s,
+          questionPairs: c,
+          answerNodes: a,
+          answerPairs: d,
+        },
+        qResult: p,
+      }),
+        (Array.isArray(p?.decisions || p?.related)
+          ? p.decisions || p.related
+          : []
+        ).forEach((v) => {
+          let k0 = Number(v?.score || 0);
+          if (!(k0 >= 0.5) || v?.isSupplement === !1) return;
+          let T = n.get(v.nodeId);
+          if (!T || (T.type !== "question" && T.type !== "answer")) return;
+          if (T.type !== q.type) return;
+          let z0 = P(T.id, q.id, Q_RELATION_TYPE, Q_ARC_STYLE, `q-${q.id}-${v.nodeId}`);
+          let M = Gt(k0, minQaScore, maxQaScore, 0.25);
+          ((z0.__dashedColor = Q_ARC_COLOR),
+            (z0.__solidColor = `rgba(37,99,235,${M.toFixed(3)})`),
+            (z0.__dashedWidth = 2),
+            (z0.qScore = k0),
+            (z0.qReason = String(v?.reason || "")),
+            N(e, z0));
+        }));
+    });
+    e.qQualityLayer = {
+      provider: qMode === "remote" ? "ai_qScore" : "local_qScore",
+      model: qMode === "remote" ? AI_RELATION_MODEL : "rule-q-v1",
+      qMode,
+      selectedOnly,
+      relations: Array.from(I.values()),
+      requestText: JSON.stringify(l),
+      responseText: y?.responseText || "[]",
+      cacheKey: Vt(e),
+      cacheVersion: 1,
+      generatedAt: new Date().toISOString(),
+    };
+    e.lastDebugSource = "q";
   }
   function dt(e) {
     let r = e.nodes.filter((t) => t.type === "answer");
@@ -761,6 +1395,12 @@
   function pt(e) {
     let r = new Map(e.edges.map((t) => [t.id, t]));
     e.edges.forEach((t) => {
+      if (t.style === Q_ARC_STYLE || t.relationType === Q_RELATION_TYPE) {
+        ((t.style = Q_ARC_STYLE),
+          (t.__dashedColor = t.__dashedColor || Q_ARC_COLOR),
+          (t.__dashedWidth = t.__dashedWidth || 2));
+        return;
+      }
       if (
         t.style === ot ||
         t.relationType === st
@@ -802,7 +1442,10 @@
     return Number.isFinite(r) ? r : Number.MAX_SAFE_INTEGER;
   }
   async function yt(e, opts = {}) {
-    (await Pt(e, opts), dt(e), pt(e));
+    let skipAiLayer = opts.skipAiLayer === !0;
+    !skipAiLayer && (await Pt(e, opts));
+    await localQRelationLayer(e, opts);
+    (dt(e), pt(e));
     let r = e.nodes.filter((a) => a.visible !== !1),
       n = new Map(r.map((a, c) => [a.id, c])),
       t = (a, c) => {
@@ -1096,14 +1739,33 @@
   async function g(e, opts = {}) {
     let allowAi = opts.allowAi === !0,
       notifyAi = opts.notifyAi === !0,
+      aiMode = opts.aiMode === "remote" ? "remote" : "local",
+      runQ = opts.runQ === !0,
+      qMode = opts.qMode === "remote" ? "remote" : "local",
+      notifyQ = opts.notifyQ === !0,
+      skipAiLayer = opts.skipAiLayer === !0,
       forceAi = opts.forceAi === !0,
       selectedNodeIds = Array.isArray(opts.selectedNodeIds)
         ? opts.selectedNodeIds
         : [],
       selectedOnly = opts.selectedOnly === !0;
-    notifyAi && allowAi && qt(!0, "姝ｅ湪杩涜 AI 鍒嗘瀽鍒ゅ埆...");
+    notifyAi &&
+      allowAi &&
+      qt(!0, aiMode === "remote" ? "正在进行 AI 判别..." : "正在进行本地判别...");
+    notifyQ &&
+      runQ &&
+      qt(!0, qMode === "remote" ? "正在进行 AI QA 分析判别..." : "正在进行 QA 分析判别...");
     try {
-      let r = await yt(e, { allowAi, forceAi, selectedNodeIds, selectedOnly });
+      let r = await yt(e, {
+        allowAi,
+        aiMode,
+        forceAi,
+        selectedNodeIds,
+        selectedOnly,
+        runQ,
+        qMode,
+        skipAiLayer,
+      });
       return (
         T({ type: "SESSION_UPDATED", session: r }),
         await Promise.all([L(r), k(r.id), K(r)]),
@@ -1112,7 +1774,10 @@
     } finally {
       notifyAi &&
         allowAi &&
-        qt(!1, "AI 鍒嗘瀽瀹屾垚锛屾鍦ㄥ埛鏂板叧绯诲浘...");
+        qt(!1, aiMode === "remote" ? "AI 判别完成，正在刷新关系图..." : "本地判别完成，正在刷新关系图...");
+      notifyQ &&
+        runQ &&
+        qt(!1, qMode === "remote" ? "AI QA 分析完成，正在刷新关系图..." : "QA 分析完成，正在刷新关系图...");
     }
   }
   async function Kt(e, opts = {}) {
@@ -1521,6 +2186,20 @@
               ok: !0,
               session: await g(t, {
                 allowAi: !0,
+                aiMode: "remote",
+                notifyAi: !0,
+                forceAi: !0,
+              }),
+            });
+            return;
+          }
+          case "RUN_LOCAL_ANALYSIS": {
+            let t = await S();
+            n({
+              ok: !0,
+              session: await g(t, {
+                allowAi: !0,
+                aiMode: "local",
                 notifyAi: !0,
                 forceAi: !0,
               }),
@@ -1542,8 +2221,115 @@
               ok: !0,
               session: await g(t, {
                 allowAi: !0,
+                aiMode: "remote",
                 notifyAi: !0,
                 forceAi: !0,
+                selectedNodeIds: o,
+                selectedOnly: !0,
+              }),
+            });
+            return;
+          }
+          case "RUN_LOCAL_ANALYSIS_SELECTED": {
+            let t = await S(),
+              o = Array.isArray(e.payload?.nodeIds)
+                ? e.payload.nodeIds
+                    .map((s) => String(s || "").trim())
+                    .filter(Boolean)
+                : [];
+            if (!o.length) {
+              n({ ok: !1, error: "请先圈选节点后再执行分析。" });
+              return;
+            }
+            n({
+              ok: !0,
+              session: await g(t, {
+                allowAi: !0,
+                aiMode: "local",
+                notifyAi: !0,
+                forceAi: !0,
+                selectedNodeIds: o,
+                selectedOnly: !0,
+              }),
+            });
+            return;
+          }
+          case "RUN_Q_ANALYSIS": {
+            let t = await S();
+            n({
+              ok: !0,
+              session: await g(t, {
+                allowAi: !1,
+                notifyAi: !1,
+                runQ: !0,
+                qMode: "local",
+                notifyQ: !0,
+                skipAiLayer: !0,
+              }),
+            });
+            return;
+          }
+          case "RUN_Q_ANALYSIS_SELECTED": {
+            let t = await S(),
+              o = Array.isArray(e.payload?.nodeIds)
+                ? e.payload.nodeIds
+                    .map((s) => String(s || "").trim())
+                    .filter(Boolean)
+                : [];
+            if (!o.length) {
+              n({ ok: !1, error: "请先圈选节点后再执行分析。" });
+              return;
+            }
+            n({
+              ok: !0,
+              session: await g(t, {
+                allowAi: !1,
+                notifyAi: !1,
+                runQ: !0,
+                qMode: "local",
+                notifyQ: !0,
+                skipAiLayer: !0,
+                selectedNodeIds: o,
+                selectedOnly: !0,
+              }),
+            });
+            return;
+          }
+          case "RUN_AI_Q_ANALYSIS": {
+            let t = await S();
+            n({
+              ok: !0,
+              session: await g(t, {
+                allowAi: !1,
+                notifyAi: !1,
+                runQ: !0,
+                qMode: "remote",
+                notifyQ: !0,
+                skipAiLayer: !0,
+              }),
+            });
+            return;
+          }
+          case "RUN_AI_Q_ANALYSIS_SELECTED": {
+            let t = await S(),
+              o = Array.isArray(e.payload?.nodeIds)
+                ? e.payload.nodeIds
+                    .map((s) => String(s || "").trim())
+                    .filter(Boolean)
+                : [];
+            if (!o.length) {
+              n({ ok: !1, error: "请先圈选节点后再执行分析。" });
+              return;
+            }
+            n({
+              ok: !0,
+              session: await g(t, {
+                allowAi: !1,
+                notifyAi: !1,
+                runQ: !0,
+                qMode: "remote",
+                notifyQ: !0,
+                skipAiLayer: !0,
                 selectedNodeIds: o,
                 selectedOnly: !0,
               }),

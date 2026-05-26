@@ -100,6 +100,15 @@ input {
   opacity: 0.82;
 }
 
+.analysis-status-lines {
+  margin-top: 4px;
+  display: grid;
+  gap: 2px;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
 .capture-header h1,
 .canvas-head h2 {
   margin: 0;
@@ -493,6 +502,12 @@ input {
   gap: 8px;
 }
 
+.lasso-batch-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .lasso-batch-panel label {
   display: grid;
   grid-template-columns: 68px 1fr;
@@ -808,6 +823,23 @@ input {
   overflow: hidden;
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
+}
+
+.edge-reason-tooltip {
+  position: absolute;
+  z-index: 9;
+  max-width: 240px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.26);
+  background: rgba(255, 255, 255, 0.96);
+  color: #111827;
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .score-row {

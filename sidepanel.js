@@ -12253,6 +12253,8 @@ Error generating stack: ` +
       dashedColor: ea,
       aiArcWidth: 2,
       aiArcColor: "#DC2626",
+      qArcWidth: 2,
+      qArcColor: "#2563EB",
       wavyWidth: 2,
       wavyColor: "#000000",
     },
@@ -12387,6 +12389,11 @@ Error generating stack: ` +
         if (o.type !== "question" && o.type !== "answer") return [];
         return [{ ...i, source: o, target: l }];
       }
+      if (i.relationType === "q_related_context") {
+        if (o.type !== l.type) return [];
+        if (o.type !== "question" && o.type !== "answer") return [];
+        return [{ ...i, source: o, target: l }];
+      }
       if (
         i.relationType !== "semantic_context" &&
         String(o.conversationId || "") !== String(l.conversationId || "")
@@ -12413,6 +12420,7 @@ Error generating stack: ` +
     setLassoMode: Dn,
     zoom: r,
     setZoom: i,
+    onLassoAnalysisStatusChange: Vn,
   }) {
     let o = (0, g.useRef)(null),
       l = (0, g.useRef)(null),
@@ -12424,6 +12432,7 @@ Error generating stack: ` +
       [kn, pn] = (0, g.useState)([]),
       [Sn, Cn] = (0, g.useState)([]),
       [Mn, En] = (0, g.useState)(0),
+      [zr, Kr] = (0, g.useState)(null),
       Wn = (0, g.useRef)({ drawing: !1, points: [], screen: [] }),
       Nn = (0, g.useRef)([]),
       h = (0, g.useMemo)(() => {
@@ -12496,11 +12505,19 @@ Error generating stack: ` +
                 w.includes("aiArcColor") &&
                   C.style === "semantic-ai-dashed-arc" &&
                   (C.__aiArcColor = p.aiArcColor),
+                w.includes("qArcWidth") &&
+                  C.style === "semantic-q-dashed-arc" &&
+                  (C.__qArcWidth = p.qArcWidth),
+                w.includes("qArcColor") &&
+                  C.style === "semantic-q-dashed-arc" &&
+                  (C.__qArcColor = p.qArcColor),
                 w.includes("dashedWidth") &&
                   C.style !== "semantic-ai-dashed-arc" &&
+                  C.style !== "semantic-q-dashed-arc" &&
                   (C.__dashedWidth = p.dashedWidth),
                 w.includes("dashedColor") &&
                   C.style !== "semantic-ai-dashed-arc" &&
+                  C.style !== "semantic-q-dashed-arc" &&
                   (C.__dashedColor = p.dashedColor),
                 w.includes("aiArcWidth") &&
                   C.style === "semantic-ai-dashed-arc" &&
@@ -12524,9 +12541,47 @@ Error generating stack: ` +
     }
     async function urAnalyzeSelected() {
       if (!Sn.length) return;
+      Vn?.("qa", "start");
       let N = await Ct("RUN_AI_ANALYSIS_SELECTED", { nodeIds: Sn });
-      if (!N?.ok || !N.session) return;
-      (Dn?.(!1), Cn([]), pn([]));
+      if (!N?.ok || !N.session) {
+        Vn?.("qa", "start");
+        return;
+      }
+      Vn?.("qa", "done");
+      (t(N.session), a((c) => na(N.session, c)), Dn?.(!1), Cn([]), pn([]));
+    }
+    async function urAnalyzeSelectedLocal() {
+      if (!Sn.length) return;
+      Vn?.("qa", "start");
+      let N = await Ct("RUN_LOCAL_ANALYSIS_SELECTED", { nodeIds: Sn });
+      if (!N?.ok || !N.session) {
+        Vn?.("qa", "start");
+        return;
+      }
+      Vn?.("qa", "done");
+      (t(N.session), a((c) => na(N.session, c)), Dn?.(!1), Cn([]), pn([]));
+    }
+    async function urAnalyzeSelectedSingleLocal() {
+      if (!Sn.length) return;
+      Vn?.("single", "start");
+      let N = await Ct("RUN_Q_ANALYSIS_SELECTED", { nodeIds: Sn });
+      if (!N?.ok || !N.session) {
+        Vn?.("single", "start");
+        return;
+      }
+      Vn?.("single", "done");
+      (t(N.session), a((c) => na(N.session, c)), Dn?.(!1), Cn([]), pn([]));
+    }
+    async function urAnalyzeSelectedSingleAi() {
+      if (!Sn.length) return;
+      Vn?.("single", "start");
+      let N = await Ct("RUN_AI_Q_ANALYSIS_SELECTED", { nodeIds: Sn });
+      if (!N?.ok || !N.session) {
+        Vn?.("single", "start");
+        return;
+      }
+      Vn?.("single", "done");
+      (t(N.session), a((c) => na(N.session, c)), Dn?.(!1), Cn([]), pn([]));
     }
     function or(N) {
       if (!Ln || !u.current) return;
@@ -12619,7 +12674,36 @@ Error generating stack: ` +
         let N = Ae(l.current);
         N.selectAll("*").remove();
         let c = new Map(),
+          x0 = new Map(),
+          Q0 = new Map(),
           f = [];
+        function Cg(P, M) {
+          let E = x0.get(String(P?.id || ""));
+          E && E.style("display", M ? null : "none");
+        }
+        function Rg(P, M) {
+          let E = String(P?.id || ""),
+            I = Q0.get(E);
+          if (!I) return;
+          if (M) {
+            (I.attr("stroke", "#9CA3AF"), I.attr("stroke-width", 3));
+            return;
+          }
+          let G = zn.has(E),
+            W = P.__customFill ? "#FFFFFF" : P.type === "question" ? "#FFFFFF" : Oh[P.quality] || Oh.medium,
+            ze = P.__customFill || (P.type === "question" ? Ih : Mh[P.quality] || Mh.medium);
+          (I.attr("stroke", G ? "#165DFF" : ze), I.attr("stroke-width", G ? 3 : 1.5), I.attr("fill", ze || W));
+        }
+        function Tg(P, M) {
+          let E = l.current?.ownerSVGElement;
+          if (!E) return;
+          let I = E.getBoundingClientRect(),
+            G = Number(M?.clientX) || 0,
+            W = Number(M?.clientY) || 0,
+            ze = Math.max(10, Math.min(G - I.left + 12, I.width - 240)),
+            se = Math.max(10, Math.min(W - I.top + 12, I.height - 100));
+          Kr({ text: P, x: ze, y: se });
+        }
         function pz(P) {
           let M = Math.max(0.4, Math.min(3, Number(P.__sizeScale) || 1));
           return P.type === "question"
@@ -12657,6 +12741,13 @@ Error generating stack: ` +
                 variant: "arc",
                 stroke: P.__solidColor || P.__aiArcColor || B.aiArcColor,
                 width: P.__aiArcWidth || B.aiArcWidth,
+                dasharray: "8 6",
+              }
+            : P.style === "semantic-q-dashed-arc"
+            ? {
+                variant: "arc",
+                stroke: P.__solidColor || P.__qArcColor || B.qArcColor,
+                width: P.__qArcWidth || B.qArcWidth,
                 dasharray: "8 6",
               }
             : P.style === "semantic-wavy"
@@ -12702,6 +12793,40 @@ Error generating stack: ` +
                 : N.append("line").attr("stroke-dasharray", I.dasharray);
           (W.attr("stroke", I.stroke).attr("stroke-width", I.width),
             I.variant === "arc" && W.attr("stroke-dasharray", I.dasharray));
+          if (
+            P.style === "semantic-ai-dashed-arc" ||
+            P.style === "semantic-q-dashed-arc"
+          ) {
+            W.style("cursor", "pointer")
+              .on("mouseenter", (ze) => {
+                let se =
+                  P.style === "semantic-ai-dashed-arc"
+                    ? String(P.aiReason || "")
+                    : String(P.qReason || "");
+                let F0 = bz(P).width;
+                W.attr("stroke-width", Math.max(Number(F0 || 0) + 1.5, 1.5));
+                Tg(se || "无判定说明", ze);
+                Cg(P.source, !0);
+                Cg(P.target, !0);
+                Rg(P.source, !0);
+                Rg(P.target, !0);
+              })
+              .on("mousemove", (ze) => {
+                let se =
+                  P.style === "semantic-ai-dashed-arc"
+                    ? String(P.aiReason || "")
+                    : String(P.qReason || "");
+                Tg(se || "无判定说明", ze);
+              })
+              .on("mouseleave", () => {
+                W.attr("stroke-width", bz(P).width);
+                Kr(null);
+                Cg(P.source, !1);
+                Cg(P.target, !1);
+                Rg(P.source, !1);
+                Rg(P.target, !1);
+              });
+          }
           f.push({ edge: P, element: W, variant: I.variant });
           I.variant === "wavy"
             ? W.attr("d", _g(G))
@@ -12842,7 +12967,7 @@ Error generating stack: ` +
               n(P);
             });
           c.set(P.id, j);
-          M
+          let H0 = M
             ? j
                 .append("ellipse")
                 .attr("cx", E / 2)
@@ -12860,6 +12985,7 @@ Error generating stack: ` +
                 .attr("fill", jz)
                 .attr("stroke", Kz ? "#165DFF" : jz)
                 .attr("stroke-width", Kz ? 3 : 1.5);
+          Q0.set(String(P.id), H0);
           j.append("foreignObject")
             .attr("width", E)
             .attr("height", I)
@@ -12880,6 +13006,7 @@ Error generating stack: ` +
             )
             .style("display", "none")
             .style("cursor", "pointer");
+          x0.set(String(P.id), K);
           K.append("circle")
             .attr("cx", 12)
             .attr("cy", 12)
@@ -12999,7 +13126,7 @@ Error generating stack: ` +
                 "\u5B9E\u7EBF",
                 g.default.createElement("input", {
                   type: "range",
-                  min: "1",
+                  min: "0",
                   max: "8",
                   step: "0.5",
                   value: Sn.length ? Ve.solidWidth : B.solidWidth,
@@ -13019,7 +13146,7 @@ Error generating stack: ` +
                 "\u7EA2\u8272\u865A\u5F27\u7EBF",
                 g.default.createElement("input", {
                   type: "range",
-                  min: "1",
+                  min: "0",
                   max: "8",
                   step: "0.5",
                   value: Sn.length ? Ve.aiArcWidth : B.aiArcWidth,
@@ -13036,10 +13163,30 @@ Error generating stack: ` +
               g.default.createElement(
                 "label",
                 null,
+                "\u84DD\u8272\u865A\u5F27\u7EBF",
+                g.default.createElement("input", {
+                  type: "range",
+                  min: "0",
+                  max: "8",
+                  step: "0.5",
+                  value: Sn.length ? Ve.qArcWidth : B.qArcWidth,
+                  onChange: (N) =>
+                    Hr((c) => ({ ...c, qArcWidth: Number(N.target.value) })),
+                }),
+                g.default.createElement("input", {
+                  type: "color",
+                  value: Sn.length ? Ve.qArcColor : B.qArcColor,
+                  onChange: (N) =>
+                    Hr((c) => ({ ...c, qArcColor: N.target.value })),
+                }),
+              ),
+              g.default.createElement(
+                "label",
+                null,
                 "\u6CE2\u6D6A\u7EBF",
                 g.default.createElement("input", {
                   type: "range",
-                  min: "1",
+                  min: "0",
                   max: "8",
                   step: "0.5",
                   value: Sn.length ? Ve.wavyWidth : B.wavyWidth,
@@ -13077,12 +13224,35 @@ Error generating stack: ` +
                       g.default.createElement(
                         "button",
                         { type: "button", onClick: ir },
-                        "\u6E05\u9664",
+                        "\u5173\u95ED",
                       ),
+                    ),
+                    g.default.createElement(
+                      "div",
+                      { className: "lasso-batch-actions" },
                       g.default.createElement(
                         "button",
                         { type: "button", onClick: urAnalyzeSelected },
-                        "\u5206\u6790",
+                        "AI-QA\u5173\u8054",
+                      ),
+                      g.default.createElement(
+                        "button",
+                        { type: "button", onClick: urAnalyzeSelectedLocal },
+                        "local-QA\u5173\u8054",
+                      ),
+                    ),
+                    g.default.createElement(
+                      "div",
+                      { className: "lasso-batch-actions" },
+                      g.default.createElement(
+                        "button",
+                        { type: "button", onClick: urAnalyzeSelectedSingleAi },
+                        "AI-单侧",
+                      ),
+                      g.default.createElement(
+                        "button",
+                        { type: "button", onClick: urAnalyzeSelectedSingleLocal },
+                        "local-单侧",
                       ),
                     ),
                   )
@@ -13161,6 +13331,16 @@ Error generating stack: ` +
               ),
             )
           : null,
+        zr
+          ? g.default.createElement(
+              "div",
+              {
+                className: "edge-reason-tooltip",
+                style: { left: `${zr.x}px`, top: `${zr.y}px` },
+              },
+              zr.text,
+            )
+          : null,
       )
     );
   }
@@ -13197,6 +13377,8 @@ Error generating stack: ` +
       [aiBusyText, setAiBusyText] = (0, g.useState)(
         "\u6B63\u5728\u8FDB\u884C\u5206\u6790\uff0c\u8bf7\u7a0d\u540e...",
       ),
+      [qaRelationStatus, setQaRelationStatus] = (0, g.useState)(""),
+      [singleSideStatus, setSingleSideStatus] = (0, g.useState)(""),
       [s, a] = (0, g.useState)(null),
       [d, m] = (0, g.useState)(!1),
       [h, v] = (0, g.useState)(!1),
@@ -13297,9 +13479,53 @@ Error generating stack: ` +
         u(E?.error || "AI \u5224\u522B\u5931\u8D25\u3002");
         return;
       }
+      setQaRelationStatus("全局QA关联已分析");
       (t(E.session),
         a((L) => na(E.session, L)),
         u("AI \u5224\u522B\u5DF2\u5B8C\u6210\u3002"));
+    }
+    async function localAnalyzeAll() {
+      u("正在进行本地-QA关联...");
+      let E = await Ct("RUN_LOCAL_ANALYSIS");
+      if (!E?.ok || !E.session) {
+        u(E?.error || "本地-QA关联失败。");
+        return;
+      }
+      setQaRelationStatus("全局QA关联已分析");
+      (t(E.session),
+        a((L) => na(E.session, L)),
+        u("本地-QA关联已完成。"));
+    }
+    async function qAnalyzeAll() {
+      u("正在进行本地-单侧...");
+      let E = await Ct("RUN_Q_ANALYSIS");
+      if (!E?.ok || !E.session) {
+        u(E?.error || "本地-单侧失败。");
+        return;
+      }
+      setSingleSideStatus("全局单侧关联已分析");
+      (t(E.session), a((L) => na(E.session, L)), u("本地-单侧已完成。"));
+    }
+    async function aiQaAnalyzeAll() {
+      u("正在进行AI-单侧...");
+      let E = await Ct("RUN_AI_Q_ANALYSIS");
+      if (!E?.ok || !E.session) {
+        u(E?.error || "AI-单侧失败。");
+        return;
+      }
+      setSingleSideStatus("全局单侧关联已分析");
+      (t(E.session), a((L) => na(E.session, L)), u("AI-单侧已完成。"));
+    }
+    function onLassoAnalysisStatusChange(E, L) {
+      if (L === "start") {
+        E === "single" ? setSingleSideStatus("") : setQaRelationStatus("");
+        return;
+      }
+      if (L === "done") {
+        E === "single"
+          ? setSingleSideStatus("局部单侧关联已分析")
+          : setQaRelationStatus("局部QA关联已分析");
+      }
     }
     async function w(E = s) {
       if (!E) {
@@ -13434,6 +13660,16 @@ ${s.content}`;
               null,
               "\u5BF9\u8BDD\u8D28\u91CF\u8BC4\u4F30",
             ),
+            g.default.createElement(
+              "div",
+              { className: "analysis-status-lines" },
+              qaRelationStatus
+                ? g.default.createElement("span", null, qaRelationStatus)
+                : null,
+              singleSideStatus
+                ? g.default.createElement("span", null, singleSideStatus)
+                : null,
+            ),
           ),
           g.default.createElement(
             "div",
@@ -13532,7 +13768,22 @@ ${s.content}`;
             g.default.createElement(
               "button",
               { type: "button", onClick: aiAnalyzeAll },
-              "AI\u5224\u522B",
+              "AI-QA\u5173\u8054",
+            ),
+            g.default.createElement(
+              "button",
+              { type: "button", onClick: localAnalyzeAll },
+              "\u672C\u5730-QA\u5173\u8054",
+            ),
+            g.default.createElement(
+              "button",
+              { type: "button", onClick: aiQaAnalyzeAll },
+              "AI-\u5355\u4FA7",
+            ),
+            g.default.createElement(
+              "button",
+              { type: "button", onClick: qAnalyzeAll },
+              "\u672C\u5730-\u5355\u4FA7",
             ),
           ),
         ),
@@ -13545,6 +13796,7 @@ ${s.content}`;
           setLassoMode: b,
           zoom: i,
           setZoom: o,
+          onLassoAnalysisStatusChange,
         }),
         aiBusy
           ? g.default.createElement(
@@ -13610,28 +13862,42 @@ ${s.content}`;
       g.default.createElement(
         "section",
         { className: "ai-raw-debug-outside" },
-        g.default.createElement(
-          "div",
-          { className: "ai-raw-debug" },
-          g.default.createElement(
+        (() => {
+          let E =
+              e?.lastDebugSource === "q"
+                ? e?.qQualityLayer
+                : e?.aiQualityLayer || e?.qQualityLayer || null,
+            L =
+              e?.lastDebugSource === "q"
+                ? e?.qQualityLayer?.provider
+                  ? `${e.qQualityLayer.provider}${e?.qQualityLayer?.qMode ? ` (${e.qQualityLayer.qMode})` : ""}`
+                  : "local_qaScore"
+                : e?.aiQualityLayer?.provider
+                  ? `${e.aiQualityLayer.provider}${e?.aiQualityLayer?.aiMode ? ` (${e.aiQualityLayer.aiMode})` : ""}`
+                  : e?.qQualityLayer?.provider || "（当前会话尚未触发判别）";
+          return g.default.createElement(
             "div",
-            { className: "ai-raw-line" },
-            "AI系统提示词：",
-            e?.aiQualityLayer?.systemPrompt || "（当前会话尚未触发AI计算）",
-          ),
-          g.default.createElement(
-            "div",
-            { className: "ai-raw-line" },
-            "给AI的文本：",
-            e?.aiQualityLayer?.requestText || "（当前会话尚未触发AI计算）",
-          ),
-          g.default.createElement(
-            "div",
-            { className: "ai-raw-line" },
-            "AI返回的文本：",
-            e?.aiQualityLayer?.responseText || "（当前会话尚未触发AI计算）",
-          ),
-        ),
+            { className: "ai-raw-debug" },
+            g.default.createElement(
+              "div",
+              { className: "ai-raw-line" },
+              "当前判别来源：",
+              L,
+            ),
+            g.default.createElement(
+              "div",
+              { className: "ai-raw-line" },
+              "判别输入：",
+              E?.requestText || "（当前会话尚未触发判别）",
+            ),
+            g.default.createElement(
+              "div",
+              { className: "ai-raw-line" },
+              "判别输出：",
+              E?.responseText || "（当前会话尚未触发判别）",
+            ),
+          );
+        })(),
       ),
       s
         ? g.default.createElement(
